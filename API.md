@@ -1,0 +1,270 @@
+# API — PMSuite Gantt Builder
+
+The public Python API for PMSuite. Streamlit and any other consumer should use only what's documented here.
+
+For data shape, see [JSONFILE.md](JSONFILE.md). For the full design rationale, [DESIGN.md](DESIGN.md). For the decision log behind these choices, [MASTERECAP.md](MASTERECAP.md).
+
+## Import
+
+```python
+from gantt_builder import api
+from gantt_builder.models import Project, Task, Dependency, Settings
+from gantt_builder.errors import (
+    GanttError, ValidationFailure, StructuralError,
+    CircularDependencyError, MissingDependencyError, DuplicateTaskIdError,
+    SelfDependencyError, InvalidParentRelationshipError, InvalidCycleTimeError,
+    InvalidCompletionDateError, UnanchoredTaskError, InvalidLocationError,
+    MissingHolidayDataError, InvalidDelayDaysError, ParentHasCycleTimeError,
+)
+```
+
+The public API surface is `gantt_builder.api`. The `models` module exposes pydantic types for typed callers. The `errors` module exposes the exception hierarchy.
+
+## Public functions
+
+### `load_project(path) -> Project`
+
+Load a project from a JSON file.
+
+```python
+project = api.load_project("projects/program_x.json")
+```
+
+**Parameters:**
+- `path: str | Path` — Path to the JSON file.
+
+**Returns:** `Project` instance.
+
+**Raises:**
+- `StructuralError` — file missing, malformed JSON, or schema violation.
+
+**Side effects:** writes a log entry to `.logs/gantt_builder.log`. Does not mutate disk.
+
+---
+
+### `save_project(project, path) -> None`
+
+Atomically write the project JSON to disk.
+
+```python
+api.save_project(project, "projects/program_x.json")
+```
+
+**Parameters:**
+- `project: Project` — In-memory project instance.
+- `path: str | Path` — Destination path.
+
+**Side effects:**
+- Updates `project.project.updated_at` to current time before writing.
+- Writes to `<path>.tmp` then `os.replace` to the final path (atomic).
+- If `project.settings.keep_local_snapshots > 0`, writes a rotating snapshot under `<path>.parent/.backups/<project_id>/<project_id>_<timestamp>.json`. Prunes oldest beyond the configured limit.
+
+**Raises:** Any `OSError` from the filesystem; cleans up the temp file on failure.
+
+---
+
+### `validate_project(project) -> list[str]`
+
+Run logical-tier validation.
+
+```python
+warnings = api.validate_project(project)
+for w in warnings:
+    print(f"warning: {w}")
+```
+
+**Returns:** A list of non-fatal warning strings (may be empty).
+
+**Raises:** `ValidationFailure` if any logical-tier errors are detected. The raised exception contains a list of `GanttError` subclass instances in `exc.errors`. Use `.to_envelope()` on each to serialize.
+
+**Tier 1** structural validation (malformed JSON, missing required fields, schema-level type errors) happens at `load_project` time as `StructuralError`. Tier 2 logical validation happens here.
+
+**Logical validators run:**
+- Duplicate task IDs
+- Task `completion_location` not in the 8-location enum
+- Missing holiday/work_week entry for a referenced location
+- Self-dependencies (task depends on itself)
+- Missing dependency references (depends on unknown task ID)
+- Circular dependencies (DFS-detected)
+- Invalid parent relationships (parent_id references unknown task; or task is its own parent)
+- Parent task has `cycle_time_days` set (forbidden — parents derive duration from children)
+- Leaf task missing or invalid `cycle_time_days`
+- Unanchored leaf task (no dependencies AND no `manual_start_date`)
+- `is_complete: true` with `actual_completion_date: null`
+- `is_complete: false` with `actual_completion_date` set
+- Negative `delay_days`
+
+Save operations do NOT call this internally — the user can save a logically-invalid project (e.g., during a multi-step edit). Build operations DO call this internally and re-raise `ValidationFailure` if it fails.
+
+---
+
+### `schedule_project(project) -> dict[str, ScheduledTask]`
+
+Run the forward-pass scheduler.
+
+```python
+schedule = api.schedule_project(project)
+for task_id, s in schedule.items():
+    print(f"{task_id}: {s.computed_start} → {s.effective_finish}")
+```
+
+**Returns:** A dict keyed by task ID. Each value is a `ScheduledTask` dataclass:
+
+```python
+@dataclass
+class ScheduledTask:
+    task_id: str
+    computed_start: date
+    computed_finish: date
+    effective_finish: date  # computed_finish + delay_days, OR actual_completion_date if complete
+```
+
+Includes both leaf tasks and parent rollups. Parent values are derived from descendants: `start = min(child starts)`, `finish = max(child finishes)`, `effective_finish = max(child effective_finishes)`.
+
+**Walking-skeleton behavior (current):** FS dependencies fully supported with positive/negative lag. SS / FF / SF currently fall back to FS semantics with a `TODO` note. Backward-pass float computation not yet implemented (lives in `critical_path.py`).
+
+**Raises:** `StructuralError` if a task is unanchored or has invalid cycle time. Validation should catch these first; this is a safety net.
+
+---
+
+### `build_excel(project, output_dir=None) -> Path`
+
+Validate, schedule, and write the Excel workbook.
+
+```python
+output_path = api.build_excel(project)
+# or
+output_path = api.build_excel(project, output_dir="custom/output/dir")
+```
+
+**Parameters:**
+- `project: Project` — In-memory project instance.
+- `output_dir: str | Path | None` — Override for output directory. If `None`, uses `project.settings.output_directory` (default `"output"`).
+
+**Returns:** `Path` to the generated `.xlsx` file.
+
+**Side effects:**
+- Runs `validate_project()` first; raises `ValidationFailure` if logical errors.
+- Computes the schedule.
+- Writes a 4-sheet workbook to `<output_dir>/gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx`.
+- Updates `project.project.last_export = LastExport(path=..., at=...)`. **This mutates the project object.** Caller may want to `save_project` after to persist the audit trail.
+- Collision-safe with `_2`, `_3` suffixes on rare same-second collisions.
+
+**Raises:** `ValidationFailure` (re-raised from validation). Any file-system error from xlsxwriter.
+
+For the full Excel output specification, see [EXCELBUILDER.md](EXCELBUILDER.md).
+
+---
+
+## Error envelope
+
+All `GanttError` subclasses serialize to a structured envelope for transport across the UI boundary.
+
+### Single-error envelope
+
+```python
+err = CircularDependencyError(
+    "Circular dependency detected: TASK-001 -> TASK-002 -> TASK-001.",
+    affected_tasks=["TASK-001", "TASK-002"],
+)
+err.to_envelope()
+# {
+#   "success": False,
+#   "error_code": "CIRCULAR_DEPENDENCY",
+#   "message": "Circular dependency detected: TASK-001 -> TASK-002 -> TASK-001.",
+#   "affected_tasks": ["TASK-001", "TASK-002"],
+# }
+```
+
+### Multi-error envelope (ValidationFailure)
+
+```python
+try:
+    api.validate_project(project)
+except ValidationFailure as exc:
+    exc.to_envelope()
+    # {
+    #   "success": False,
+    #   "errors": [
+    #     {"success": False, "error_code": "DUPLICATE_TASK_ID", ...},
+    #     {"success": False, "error_code": "MISSING_DEPENDENCY", ...},
+    #     ...
+    #   ],
+    # }
+```
+
+`ValidationFailure.errors` is a `list[GanttError]` that the UI can iterate to display each error individually.
+
+## Exception hierarchy
+
+```
+GanttError                          (base; error_code = "GANTT_ERROR")
+├── ValidationFailure               ("VALIDATION_FAILURE")    — collects multiple
+├── StructuralError                 ("STRUCTURAL_ERROR")      — tier 1, fails fast
+├── CircularDependencyError         ("CIRCULAR_DEPENDENCY")
+├── MissingDependencyError          ("MISSING_DEPENDENCY")
+├── DuplicateTaskIdError            ("DUPLICATE_TASK_ID")
+├── SelfDependencyError             ("SELF_DEPENDENCY")
+├── InvalidParentRelationshipError  ("INVALID_PARENT_RELATIONSHIP")
+├── InvalidCycleTimeError           ("INVALID_CYCLE_TIME")
+├── InvalidStartDateError           ("INVALID_START_DATE")
+├── InvalidCompletionDateError      ("INVALID_COMPLETION_DATE")
+├── UnanchoredTaskError             ("UNANCHORED_TASK")
+├── InvalidLocationError            ("INVALID_LOCATION")
+├── MissingHolidayDataError         ("MISSING_HOLIDAY_DATA")
+├── InvalidDelayDaysError           ("INVALID_DELAY_DAYS")
+└── ParentHasCycleTimeError         ("PARENT_HAS_CYCLE_TIME")
+```
+
+Every subclass carries:
+- `error_code: str` (class attribute)
+- `message: str`
+- `affected_tasks: list[str]`
+
+## Streamlit usage pattern
+
+```python
+import streamlit as st
+from gantt_builder import api
+from gantt_builder.errors import GanttError, ValidationFailure
+
+try:
+    output = api.build_excel(project)
+    st.success(f"Built: {output}")
+except ValidationFailure as exc:
+    for err in exc.errors:
+        st.error(f"{err.error_code}: {err.message}")
+        if err.affected_tasks:
+            st.caption(f"Affected: {', '.join(err.affected_tasks)}")
+except GanttError as exc:
+    st.error(f"{exc.error_code}: {exc.message}")
+```
+
+## Logging
+
+`gantt_builder.logging_config.configure_logging()` is called automatically on first use of any API function. Configuration is idempotent. Logs go to:
+
+- `.logs/gantt_builder.log` — rotating file, 10 MB, last 5 retained, UTF-8.
+- `stderr` — same content.
+
+Default level `INFO`. Module-level loggers via `get_logger(__name__)`.
+
+## What's NOT in the public API yet (planned)
+
+These will be added as the stubbed features land:
+
+- `mark_task_complete(project, task_id, date=None) -> None` — apply Q8 cascade rules.
+- `unmark_task_complete(project, task_id) -> None` — Q8e unset.
+- `apply_daily_delays(project) -> DelayApplicationResult` — Q9b manual trigger.
+- `auto_catchup_on_load(project) -> DelayApplicationResult` — Q11 Option B catch-up.
+- `undo_delay_batch(project, batch_id) -> None` — Q24c session-scoped undo.
+- `add_task(project, **kwargs) -> Task` — sequential ID assignment, validation, defaults from `settings.default_location` (which doesn't exist in v1 since location is per-task required).
+- `update_task(project, task_id, **kwargs) -> Task`.
+- `delete_task(project, task_id) -> None` — must reject if other tasks depend on it.
+- `add_dependency(project, task_id, dep_id, type="FS", lag_days=0) -> None`.
+- `remove_dependency(project, task_id, dep_id) -> None`.
+- `reseed_holidays(project, location) -> HolidayDiff` — Q20 re-seed-with-diff.
+- `update_holidays(project, location, holidays) -> None`.
+- `next_task_id(project) -> str` — gap-respecting generator.
+
+Until then, callers may mutate the `Project` pydantic model directly. The API contract above does not cover those mutations.
