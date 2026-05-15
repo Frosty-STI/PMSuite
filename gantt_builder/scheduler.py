@@ -171,6 +171,28 @@ def _add_days_in_calendar(
     return current
 
 
+def _subtract_days_in_calendar(
+    end: date, days_to_subtract: int, calendar_mode: str, location: str, project: Project,
+) -> date:
+    """Symmetric inverse of _add_days_in_calendar: walk backward from `end`."""
+    if days_to_subtract <= 0:
+        return end
+
+    if calendar_mode == "e_days":
+        return end - timedelta(days=days_to_subtract)
+
+    work_week = set(project.settings.work_weeks.get(location, []))
+    holiday_dates = {h.date for h in project.settings.holidays.get(location, [])}
+
+    current = end
+    remaining = days_to_subtract
+    while remaining > 0:
+        current -= timedelta(days=1)
+        if weekday_code(current) in work_week and current not in holiday_dates:
+            remaining -= 1
+    return current
+
+
 def _topological_order(leaves: list[Task], project: Project) -> list[Task]:
     """Return leaves in topological order so each task's dependencies are scheduled first."""
     leaf_ids = {t.id for t in leaves}
