@@ -5,11 +5,14 @@ total_float == 0 are on the critical path. Completed tasks are excluded from
 the live critical path (their effective_finish is fixed and they can no longer
 slip), but a snapshot is captured to project.history at completion time.
 
-Walking-skeleton scope: handles FS dependencies fully. SS/FF/SF currently
-treated as FS — full handling lands when the dependency-types commit extends
-the scheduler. The CPM math is otherwise complete: backward pass, latest start
-/ latest finish, total float, critical marking, project-end derivation, parent
-inheritance of critical status.
+Handles all four dependency types (FS / SS / FF / SF) with lag. The backward
+pass derives a maximum allowable LF for each predecessor from each successor's
+LS or LF depending on the dependency type:
+
+- FS: pred.LF <= succ.LS - 1 - lag
+- SS: pred.LS <= succ.LS - lag   (translated to LF via cycle in pred's calendar)
+- FF: pred.LF <= succ.LF - lag
+- SF: pred.LS <= succ.LF - lag   (translated to LF via cycle in pred's calendar)
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from .logging_config import get_logger
 from .models import Project, Task
 from .scheduler import (
     ScheduledTask,
+    _add_days_in_calendar,
     _subtract_days_in_calendar,
     _topological_order,
 )
@@ -76,24 +80,46 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
 
     for task in reversed(topo_order):
         succ_list = successors.get(task.id, [])
-        constraints: list[date] = []
+        cycle = task.cycle_time_days or 1
+        lf_constraints: list[date] = []
 
         for succ in succ_list:
             for dep in succ.dependencies:
                 if dep.id != task.id:
                     continue
                 succ_ls = latest_start.get(succ.id)
-                if succ_ls is None:
+                succ_lf = latest_finish.get(succ.id)
+                if succ_ls is None or succ_lf is None:
                     continue
-                # FS (and walking-skeleton fallback for SS/FF/SF):
-                # predecessor's LF must be <= successor's LS - 1 - lag (calendar days)
-                constraints.append(succ_ls - timedelta(days=1 + dep.lag_days))
+
+                if dep.type == "FS":
+                    # pred.LF <= succ.LS - 1 - lag
+                    lf_constraints.append(succ_ls - timedelta(days=1 + dep.lag_days))
+                elif dep.type == "SS":
+                    # pred.LS <= succ.LS - lag  =>  pred.LF <= (that) + (cycle - 1) in pred's calendar
+                    pred_ls_max = succ_ls - timedelta(days=dep.lag_days)
+                    pred_lf_max = _add_days_in_calendar(
+                        pred_ls_max, cycle - 1, task.calendar_mode, task.completion_location, project,
+                    )
+                    lf_constraints.append(pred_lf_max)
+                elif dep.type == "FF":
+                    # pred.LF <= succ.LF - lag
+                    lf_constraints.append(succ_lf - timedelta(days=dep.lag_days))
+                elif dep.type == "SF":
+                    # pred.LS <= succ.LF - lag  =>  pred.LF <= (that) + (cycle - 1)
+                    pred_ls_max = succ_lf - timedelta(days=dep.lag_days)
+                    pred_lf_max = _add_days_in_calendar(
+                        pred_ls_max, cycle - 1, task.calendar_mode, task.completion_location, project,
+                    )
+                    lf_constraints.append(pred_lf_max)
+                else:
+                    # defensive fallback — FS semantics
+                    lf_constraints.append(succ_ls - timedelta(days=1 + dep.lag_days))
                 break
 
-        lf = min(constraints) if constraints else project_end
+        lf = min(lf_constraints) if lf_constraints else project_end
         latest_finish[task.id] = lf
 
-        cycle = task.cycle_time_days or 1
         ls = _subtract_days_in_calendar(
             lf, cycle - 1, task.calendar_mode, task.completion_location, project,
         )

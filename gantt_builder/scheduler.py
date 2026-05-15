@@ -3,15 +3,20 @@
 Computes earliest start and earliest finish for every task, respecting:
 - Per-task calendar mode (working_days vs e_days)
 - Manual start date as floor
-- Finish-to-start dependencies (other types are stubbed; FS handled fully)
-- Lag (positive or negative, in predecessor's calendar mode)
+- Full FS / SS / FF / SF dependency types with lag (positive or negative)
 - Parent rollup (parent.start = earliest child start; parent.end = latest child end)
 - Cumulative delay_days applied to compute effective_finish
 - Completion freeze (actual_completion_date overrides computed_finish)
 
-Walking-skeleton scope: FS dependency type fully supported; SS/FF/SF currently
-fall back to FS semantics with a TODO note. Backward pass (for critical path /
-float) lives in critical_path.py.
+Dependency type semantics (all lag values are in calendar days):
+- FS: successor.start >= predecessor.effective_finish + 1 + lag
+- SS: successor.start >= predecessor.computed_start + lag
+- FF: successor.finish >= predecessor.effective_finish + lag
+       => successor.start >= (that finish) - (cycle - 1) in successor's calendar
+- SF: successor.finish >= predecessor.computed_start + lag
+       => successor.start >= (that finish) - (cycle - 1) in successor's calendar
+
+Backward pass for critical path / float lives in critical_path.py.
 """
 
 from __future__ import annotations
@@ -94,9 +99,7 @@ def _schedule_leaf(task: Task, project: Project, scheduled: dict[str, ScheduledT
         pred = scheduled.get(dep.id)
         if pred is None:
             continue  # validation should catch this
-        # Walking skeleton: FS fully supported, others fall back to FS semantics
-        # TODO: implement SS / FF / SF semantics fully (see DESIGN.md Q8)
-        floor = pred.effective_finish + timedelta(days=1 + dep.lag_days)
+        floor = _dependency_start_floor(task, dep, pred, project)
         floors.append(floor)
 
     if not floors:
@@ -127,6 +130,45 @@ def _compute_finish(task: Task, start: date, project: Project) -> date:
     return _add_days_in_calendar(
         start, task.cycle_time_days - 1, task.calendar_mode, task.completion_location, project,
     )
+
+
+def _dependency_start_floor(
+    task: Task, dep, pred: ScheduledTask, project: Project,
+) -> date:
+    """Compute the earliest start for `task` implied by one dependency on `pred`.
+
+    Each dependency type produces a floor on the successor's start; the caller
+    takes max() across all dependency floors (and manual_start_date / parent floors).
+    """
+    cycle = task.cycle_time_days or 1
+    lag = dep.lag_days
+    dep_type = dep.type
+
+    if dep_type == "FS":
+        # Successor starts the day after predecessor's effective finish + lag.
+        return pred.effective_finish + timedelta(days=1 + lag)
+
+    if dep_type == "SS":
+        # Successor starts when predecessor starts (+ lag).
+        return pred.computed_start + timedelta(days=lag)
+
+    if dep_type == "FF":
+        # Successor finishes when predecessor finishes (+ lag).
+        # => successor.start = implied_finish - (cycle - 1) in successor's calendar
+        implied_finish = pred.effective_finish + timedelta(days=lag)
+        return _subtract_days_in_calendar(
+            implied_finish, cycle - 1, task.calendar_mode, task.completion_location, project,
+        )
+
+    if dep_type == "SF":
+        # Successor finishes when predecessor starts (+ lag). Rare.
+        implied_finish = pred.computed_start + timedelta(days=lag)
+        return _subtract_days_in_calendar(
+            implied_finish, cycle - 1, task.calendar_mode, task.completion_location, project,
+        )
+
+    # Unknown type — defensive fallback to FS
+    return pred.effective_finish + timedelta(days=1 + lag)
 
 
 def _snap_to_working_day(d: date, task: Task, project: Project) -> date:
