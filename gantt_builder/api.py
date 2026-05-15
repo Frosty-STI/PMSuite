@@ -13,6 +13,13 @@ from datetime import datetime
 from pathlib import Path
 
 from .critical_path import compute_critical_path
+from .delays import (
+    apply_auto_catchup as _apply_auto_catchup,
+    apply_manual_delay as _apply_manual_delay,
+    is_auto_catchup_pending as _is_pending,
+    preview_auto_catchup as _preview_auto_catchup,
+    undo_delay_batch as _undo_delay_batch,
+)
 from .excel_builder import build_excel as _build_excel
 from .logging_config import get_logger
 from .models import LastExport, Project
@@ -63,3 +70,35 @@ def build_excel(project: Project, output_dir: str | Path | None = None) -> Path:
         at=datetime.now().astimezone(),
     )
     return output_path
+
+
+# -- Delay engine ----------------------------------------------------------
+
+def preview_auto_catchup(project: Project, today=None):
+    """Compute what auto-catchup would do without mutating the project.
+
+    Returns a DelayApplicationResult. UI uses this to populate the
+    "Apply auto-catchup?" modal on project load.
+    """
+    return _preview_auto_catchup(project, today=today)
+
+
+def apply_auto_catchup(project: Project, today=None):
+    """Apply auto-catchup delays in-place. Returns a DelayApplicationResult."""
+    return _apply_auto_catchup(project, today=today)
+
+
+def apply_manual_delay(project: Project, task_id: str, days_added: int,
+                       reason: str | None = None, today=None):
+    """Apply a manual delay to one task. Returns a DelayApplicationResult."""
+    return _apply_manual_delay(project, task_id, days_added, reason=reason, today=today)
+
+
+def undo_delay_batch(project: Project, batch) -> list[str]:
+    """Reverse a delay batch within the session. Returns reverted task IDs."""
+    return _undo_delay_batch(project, batch)
+
+
+def is_auto_catchup_pending(project: Project, today=None) -> bool:
+    """True if `apply_auto_catchup` would actually do something."""
+    return _is_pending(project, today=today)

@@ -103,3 +103,11 @@ class InvalidDelayDaysError(GanttError):
 
 class ParentHasCycleTimeError(GanttError):
     error_code = "PARENT_HAS_CYCLE_TIME"
+
+
+class TaskNotFoundError(GanttError):
+    error_code = "TASK_NOT_FOUND"
+
+
+class CompletedTaskCannotBeDelayedError(GanttError):
+    error_code = "COMPLETED_TASK_CANNOT_BE_DELAYED"
