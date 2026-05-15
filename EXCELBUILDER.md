@@ -199,24 +199,41 @@ Cold-start budget at 50–300 tasks: **< 6 seconds total** (load → validate �
 
 At 2000+ tasks (no hard cap), performance degrades gracefully — Day View writes scale linearly with task count × axis-day count.
 
-## What's NOT yet implemented (walking skeleton)
+## Current implementation status (commit `c824203`)
 
-The walking skeleton ships a valid 4-sheet workbook with:
-- Task IDs, Names, Locations populated.
-- Basic planned (blue) / completed (green) cell coloring in Day View.
-- Week View overlap coloring.
-- Schedule Calculations with derived columns.
-- Critical Path Notes summary block.
+**Full Option E rendering is shipped.** The workbook delivers:
 
-Still to land in the full-rendering commit:
-- Delay extension (orange) segments.
-- Overdue (red) markers.
-- Critical path (dark red) indicators.
-- Today column highlight.
-- Weekend column shading in Day View.
-- Holiday column shading per row's location.
-- Parent summary bars with caps.
-- Holiday names in column headers.
-- Per-row hover tooltips or comments showing delay reason / completion date.
+- 4 sheets (Day View, Week View, Schedule Calculations, Critical Path Notes).
+- Frozen-pane metadata columns: TASK ID, Name, Location, **Cycle Time (Days)**, **Baseline Start**, **Baseline Finish**.
+- Segmented bar colors per task row:
+  - Planned (incomplete): muted blue (`#4A90D9`).
+  - Completed (full bar): green (`#2E8B57`).
+  - Delay extension (`computed_finish < d ≤ effective_finish`): orange (`#E68A00`).
+  - Overdue tail (`d > effective_finish` and not complete, up to today): red (`#D9534F`).
+- Critical path indicator: thick dark-red (`#8B0000`) top + bottom border applied on top of the status fill for any task in `critical_task_ids`. Parent tasks inherit critical-border styling when any descendant is critical.
+- Today vertical line: thick black left border on every body cell in today's column, plus a yellow column header. Empty cells in today's column receive a light-yellow fill so the line stays visible across all rows.
+- Multi-line date column headers: weekday, ISO date, and holiday name(s) per location. Multi-location holidays list every observer, e.g., `Wed\n2025-12-25\nChristmas Day (AIZU, FR-BIP, USA)`.
+- Column header shading: USA Saturday/Sunday → light gray; any-location holiday → darker gray; today → yellow (overrides).
+- Per-row weekend / holiday "gap" shading: a `working_days` task on its location's non-working day shows a light-gray gap inside the bar range; `e_days` tasks (oven cycles) render continuous through weekends and holidays per the design.
+- Parent summary rows: dark-gray (`#555555`) bar across `[computed_start, effective_finish]` with critical inheritance.
 
-When the full-rendering commit lands, this document and the corresponding test in `tests/test_excel_builder.py` should be updated together.
+The Schedule Calculations sheet has 22 columns including the two new Baseline columns; Critical Path Notes carries the summary block, project end, and totals for critical / overdue / delayed tasks.
+
+## Demo workbooks for visual review
+
+The two committed demos in `examples/` ship with real 2026–2027 holidays seeded. Running `api.build_excel(project)` against either produces the full Option E rendering. Most recent local builds (gitignored):
+
+```
+output/gantt_DEMO-SMALL_2026-05-14_225130.xlsx
+output/gantt_DEMO-NPDE_2026-05-14_225130.xlsx
+```
+
+`DEMO-NPDE` is the more representative demo: 10 tasks across 5 locations with mixed `e_days` and `working_days`, exercising every rendering branch.
+
+## Known follow-ups (not blocking)
+
+- **Per-row hover tooltips / cell comments** for delay reasons and completion dates are not yet wired. The data is in `task.delay_log` and `task.actual_completion_date` — adding tooltip text via `worksheet.write_comment` is a localized future change.
+- **Day View body cells in non-today columns** do not currently apply weekend column shading globally; only per-row shading on working-day tasks within the bar. If a user wants USA-perspective Saturday/Sunday shading across all rows regardless of task location, that would be a column-level conditional format applied after the body fills.
+- **Critical Path Notes sheet** currently shows summary block only. The full layout per DESIGN.md §11.4 (critical task table, near-critical top 5, recently completed late/early, dependency warnings) is data-ready but not yet rendered as tables.
+
+These are tracked in the HANDOFF roadmap and can be addressed alongside the test backfill (Step 9 in the post-grilling plan).

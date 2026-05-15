@@ -249,22 +249,70 @@ except GanttError as exc:
 
 Default level `INFO`. Module-level loggers via `get_logger(__name__)`.
 
-## What's NOT in the public API yet (planned)
+## Delay engine
 
-These will be added as the stubbed features land:
+### `preview_auto_catchup(project, today=None) -> DelayApplicationResult`
 
-- `mark_task_complete(project, task_id, date=None) -> None` — apply Q8 cascade rules.
-- `unmark_task_complete(project, task_id) -> None` — Q8e unset.
-- `apply_daily_delays(project) -> DelayApplicationResult` — Q9b manual trigger.
-- `auto_catchup_on_load(project) -> DelayApplicationResult` — Q11 Option B catch-up.
-- `undo_delay_batch(project, batch_id) -> None` — Q24c session-scoped undo.
-- `add_task(project, **kwargs) -> Task` — sequential ID assignment, validation, defaults from `settings.default_location` (which doesn't exist in v1 since location is per-task required).
+Dry-run. Computes per-task overdue days without mutating the project. UI uses this to populate the auto-catchup prompt modal.
+
+### `apply_auto_catchup(project, today=None) -> DelayApplicationResult`
+
+Per-task accurate catch-up (Option B per DESIGN.md Q11). For each incomplete leaf, adds `max(0, today - effective_finish)` to `delay_days` and appends a `DelayLogEntry`. Updates `settings.last_auto_delay_run`. Idempotent within a single day. Fresh projects (no prior run) initialize baseline to today without applying delays.
+
+### `apply_manual_delay(project, task_id, days_added, reason=None, today=None) -> DelayApplicationResult`
+
+User-driven delay. Raises `CompletedTaskCannotBeDelayedError` if the task is already complete (delays are frozen on completion). Raises `TaskNotFoundError` if the ID is unknown. Raises `ValueError` if `days_added < 1`.
+
+### `undo_delay_batch(project, result) -> list[str]`
+
+Reverses a `DelayApplicationResult` within the session. Returns the list of task IDs successfully reverted. Tasks whose `delay_log` has been manually edited between apply and undo are skipped — caller can detect skips by comparing `len(returned) < len(batch.entries)`.
+
+### `is_auto_catchup_pending(project, today=None) -> bool`
+
+Cheap check used by Streamlit on load to decide whether to show the auto-catchup prompt.
+
+## Completion
+
+### `mark_task_complete(project, task_id, completion_date=None) -> CompletionResult`
+
+Marks the task complete. If the task has descendants (any depth), cascades `is_complete=True` and `actual_completion_date` down through every descendant.
+
+**Cascade rules (Q8d common-sense reading):**
+- Descendant not yet complete → marked with `completion_date`.
+- Descendant complete with EARLIER date → preserved (don't destroy history).
+- Descendant complete with LATER date → overwritten to `completion_date`.
+- Descendant complete with SAME date → no change recorded.
+
+Returns a `CompletionResult` with `primary_task_id`, `applied_date`, `changes` (the audit list), and `preserved` (task IDs of children kept with their earlier date).
+
+Raises `TaskNotFoundError` if `task_id` is unknown.
+
+### `unmark_task_complete(project, task_id) -> None`
+
+Toggles `is_complete: true → false` on ONE task. Clears `actual_completion_date`. Does NOT cascade to descendants — if needed, use `undo_complete_batch` with the original `CompletionResult` to revert a full cascade.
+
+### `undo_complete_batch(project, result) -> list[str]`
+
+Reverses a mark-complete batch. Each task is restored to its `prev_*` snapshot only if its current state still matches the `new_*` snapshot we wrote (defensive: don't clobber subsequent manual edits).
+
+## Baseline
+
+### `set_project_baseline(project, overwrite=False) -> BaselineResult`
+
+Snapshots current `computed_start` / `computed_finish` into each task's `baseline_start` / `baseline_finish`. By default, tasks that already have a baseline are skipped. Pass `overwrite=True` to re-baseline every task. Returns a `BaselineResult` listing baselined and skipped task IDs.
+
+The baseline is the user-committed plan reference — it does NOT move when delays or completion shift the live schedule. Used by Excel rendering to display "Baseline Start" / "Baseline Finish" alongside "Computed Start" / "Computed Finish" in both the frozen pane of Day View / Week View and the Schedule Calculations audit sheet.
+
+## What's NOT in the public API yet (planned for Step 6)
+
+These will be added when the Streamlit editing surface needs them:
+
+- `add_task(project, **kwargs) -> Task` — sequential ID assignment via `next_task_id`, validation, defaults.
 - `update_task(project, task_id, **kwargs) -> Task`.
 - `delete_task(project, task_id) -> None` — must reject if other tasks depend on it.
 - `add_dependency(project, task_id, dep_id, type="FS", lag_days=0) -> None`.
 - `remove_dependency(project, task_id, dep_id) -> None`.
-- `reseed_holidays(project, location) -> HolidayDiff` — Q20 re-seed-with-diff.
+- `reseed_holidays(project, location) -> HolidayDiff` — Q20 re-seed-with-diff (currently `seed_holidays()` in `locations.py` returns the raw library output; the diff wrapper is the Streamlit-side need).
 - `update_holidays(project, location, holidays) -> None`.
-- `next_task_id(project) -> str` — gap-respecting generator.
 
-Until then, callers may mutate the `Project` pydantic model directly. The API contract above does not cover those mutations.
+Until then, callers may mutate the `Project` pydantic model directly — the model is the source of truth. Direct mutations should be followed by `save_project()` to persist and `validate_project()` to verify.

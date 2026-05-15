@@ -1,101 +1,230 @@
 # HANDOFF — PMSuite Gantt Builder
 
-This document is the resume point for any fresh agent or developer picking up where we left off. It is intentionally short — depth lives in the cross-referenced docs.
+This document is the resume point for any fresh agent or developer picking up where we left off. Depth lives in the cross-referenced docs.
 
-## Where we are right now
+## Where we are right now (commit `c824203` on `main`)
 
-- **Walking skeleton committed and pushed** (commit `10a294d`, branch `main`, repo `https://github.com/Frosty-STI/PMSuite`).
-- **11 tests pass** (`pytest -q` ~1 sec). The end-to-end pipeline (load JSON → validate → schedule → build Excel) is real and working.
-- **8 location enum** wired with USA-perspective work-weeks. Holiday-library seed map prepared but holidays themselves are empty in the demo projects.
-- **One commit upstream of `Initial commit`.** The repo's user-facing artifact at this moment is the walking skeleton.
+**The backend is feature-complete. Step 5 (full visual Excel rendering) just shipped.**
 
-## What's locked (no need to re-litigate)
+Latest commits (most recent first):
 
-All 26 design decisions from the grilling session are captured in [MASTERECAP.md](MASTERECAP.md). See [DESIGN.md](DESIGN.md) for the architecture-level rationale, [JSONFILE.md](JSONFILE.md) for the JSON schema, [API.md](API.md) for the Python API contract, [EXCELBUILDER.md](EXCELBUILDER.md) for the Excel output spec, and [STREAMLIT.md](STREAMLIT.md) for the UI spec.
+| Hash      | Step | Summary |
+|-----------|------|---------|
+| `c824203` | 5    | Full Option E Excel rendering + real holiday seeding for demos |
+| `38a85a2` | 4.5  | Baseline fields + Cycle Time (Days) header rename |
+| `1829fa5` | 4    | Parent completion cascade with preserve-earlier-children rule |
+| `f40e9dd` | 3    | Delay propagation engine with auto-catchup and undo |
+| `3a61f29` | 2    | Full SS / FF / SF dependency types with lag |
+| `e3bde5e` | 1    | Backward-pass CPM with total float and critical-path detection |
+| `b7c357d` | doc  | Initial comprehensive documentation (HANDOFF, MASTERECAP, etc.) |
+| `10a294d` | 0    | Walking-skeleton scaffold |
 
-Latest commits this session: parent completion cascade preserves children's earlier `actual_completion_date` (does NOT overwrite — Q8d / common-sense reading confirmed by user).
+**70/70 tests passing** (`pytest -q` ~0.45 sec). The end-to-end pipeline plus all four delay/completion/baseline workflows are functional.
 
-## What's stubbed (the work ahead)
+## What works today
 
-Walking skeleton ships the pipeline shape; these are real holes the customer demo needs filled:
+- **Forward-pass scheduling** with full FS / SS / FF / SF dependency types and positive/negative lag.
+- **Backward-pass CPM** computes `total_float` for every leaf and marks tasks with float == 0 as critical (completed tasks excluded).
+- **Per-task calendar mode** (`working_days` vs `e_days`), per-location work-weeks, per-location holidays.
+- **Manual-start as floor** combined with dependency-driven starts; unanchored leaves are validation errors.
+- **Parent / multi-level hierarchy** with rollup; parents can have their own dependencies and manual starts.
+- **Cumulative `delay_days`** with audit `delay_log`. Manual and auto-catchup-on-load both flow through here.
+- **Auto-catchup math:** Option B (per-task accurate, static). Fresh-project baseline initialization; idempotent within a day.
+- **Completion semantics:** auto-fill date, freeze effective dates, parent cascade with preserve-earlier-children, undo within session.
+- **Project baseline:** `set_project_baseline()` snapshots current dates into `baseline_start` / `baseline_finish` per task.
+- **Atomic JSON I/O** with rotating snapshots.
+- **Two-tier collect validation** (structural fails fast, logical collects).
+- **Excel workbook generation** with full Option E rendering:
+  - Frozen-pane metadata: TASK ID, Name, Location, Cycle Time (Days), Baseline Start, Baseline Finish.
+  - Segmented bar colors (planned blue, completed green, delayed orange, overdue red).
+  - Critical-path dark-red stripe via top/bottom border.
+  - Today vertical line (thick black left border on every body cell in today's column).
+  - Multi-line date column headers with weekday, date, and holiday name(s) per location.
+  - Per-row weekend/holiday "gap" shading for working-day tasks.
+  - E-day tasks render continuous through weekends and holidays.
+  - Parent summary bars in dark gray with critical inheritance.
+  - 4 sheets: Day View, Week View, Schedule Calculations, Critical Path Notes.
+- **Streamlit UI shell** (read-only) — picks project, displays task table, runs Validate / Save / Build Excel.
 
-1. **Backward-pass CPM + total float** — `gantt_builder/critical_path.py` returns empty critical set.
-2. **SS / FF / SF dependency types + lag** — currently fall back to FS semantics silently (concerning for handoff).
-3. **Delay propagation engine + auto-catchup-on-load + `delay_log` audit trail** — the "living document" headline feature is not yet built.
-4. **Parent completion cascade + completion freeze** — design decided, code not yet written.
-5. **Full Excel rendering** (Option E segmented colors, today line, weekend/holiday shading per row's location, parent summary bars).
-6. **Streamlit editing surface** — task add/edit/delete, dependency picker with explanation expander, dirty-state badge with browser beforeunload warning, New Project form.
-7. **Holiday editor page** with re-seed-from-library diff.
-8. **Expand `examples/npde_demo.json`** to ~30-50 tasks modeling a generic NPDE program drawn from public-web semiconductor flows. Public-domain only — never TI internal data. Seed real 2026-2027 holidays.
-9. **Remaining test files:** `test_validation.py`, `test_scheduler.py`, `test_delays.py`, `test_completion.py`, `test_dependencies.py`, `test_critical_path.py`, `test_locations.py`, `test_holidays.py`, `test_excel_builder.py`, `test_excel_visual.py`, `test_performance.py`.
+## What's still stubbed (next session's work)
 
-## The user's current targeting
+In priority order (matching the original 9-step plan with steps 1–5 now done):
 
-- **Demo audience: external customers / cross-team handoff.** Both function and visual polish required.
-- **Public web NPDE data only.** Never TI internal data in this public repo.
-- **Per-feature commits.** Each item from "stubbed" list = one commit, pushed.
-- **License: MIT** (default, override if enterprise constraint surfaces).
-- **Real holidays** seeded for 2026-2027 in the demo project.
-- **Color palette: locked** per [DESIGN.md §14.4](DESIGN.md).
+6. **Streamlit editing surface** — task add/edit/delete in-place, dependency picker with "Dependency Explanation" expander, mark-complete checkbox wired to the cascade, dirty-state badge, browser `beforeunload` warning, New Project form, single-project switching dialog.
+7. **Holiday editor page** — dedicated Streamlit route, tabbed by location, table of `{date, name, source}` with add/edit/delete, "Re-seed from library" with diff preview.
+8. **Expand `examples/npde_demo.json`** — currently 10 tasks; target ~30–50 tasks modeling a generic NPDE program (kickoff → mask design → wafer fab → assembly → burn-in → qual → datasheet → CSR), using public-domain semiconductor flow knowledge only. Real holidays already seeded.
+9. **Remaining test files** — `test_validation.py`, `test_scheduler.py` (calendar math edge cases), `test_locations.py`, `test_holidays.py`, `test_excel_builder.py` (structural assertions on the Option E rendering), `test_excel_visual.py` (opt-in), `test_performance.py` (slow marker).
 
-## Two paths the user is choosing between
+## Files modified during this session (beyond the original walking skeleton)
 
-These were on the table when this handoff was written:
+```
+gantt_builder/
+├── api.py             — re-exports all new public functions
+├── baseline.py        — NEW. set_project_baseline + BaselineResult
+├── completion.py      — NEW. mark_task_complete, unmark, undo
+├── critical_path.py   — backward pass implemented; SS/FF/SF in CPM math
+├── delays.py          — NEW. preview_auto_catchup, apply_*, undo, is_pending
+├── errors.py          — added TaskNotFoundError, CompletedTaskCannotBeDelayedError
+├── excel_builder.py   — full Option E rendering
+├── models.py          — Task gained baseline_start, baseline_finish;
+│                         Project gained all_descendant_ids / _leaf_ids helpers
+├── scheduler.py       — dependency-floor dispatcher for FS/SS/FF/SF;
+│                         _subtract_days_in_calendar helper
+└── ...
 
-**Path A — Go-mode (autonomous).** I work through all 9 steps with ~4 visual/data checkpoints from the user (~30 min total user time). Wall clock: 5-12 hours of agent execution time.
+tests/
+├── test_baseline.py        — NEW. 5 tests
+├── test_completion.py      — NEW. 15 tests
+├── test_critical_path.py   — NEW. 8 tests
+├── test_delays.py          — NEW. 19 tests
+├── test_dependencies.py    — NEW. 12 tests
+├── test_api.py             — original 2 tests
+├── test_models.py          — original 4 tests
+├── test_project_io.py      — original 5 tests
+└── ...
 
-**Path B — Pair-programming-mode.** User watches in real-time, tighter feedback loop, slower but tighter alignment.
+examples/
+├── small_demo.json    — baseline populated; 27 real USA 2026–2027 holidays
+└── npde_demo.json     — baseline populated; 173 real holidays across
+                         USA / MLA / TAI / FR-BIP / AIZU
+```
 
-User has not yet selected. **First question to ask on resume: which path?**
+70 tests total. All passing.
+
+## Latest demo workbooks (locally; gitignored)
+
+```
+C:\Users\Frosty\PMsuite\output\gantt_DEMO-SMALL_2026-05-14_225130.xlsx
+C:\Users\Frosty\PMsuite\output\gantt_DEMO-NPDE_2026-05-14_225130.xlsx
+```
+
+Both showcase the full Option E rendering. NPDE is the more interesting one (5 locations, mixed calendar modes, real holidays).
+
+## The user's targeting
+
+- **Demo audience:** external customers / cross-team handoff.
+- **Path A (go-mode):** working through steps autonomously with checkpoint reviews at natural boundaries.
+- **Public-web data only.** Never TI-internal information in the public repo.
+- **Per-feature commits.** Each step lands as its own pushed commit.
+- **License: MIT** (locked).
+- **Real 2026–2027 holidays** already seeded into both demo projects.
+- **Color palette: locked** per MASTERECAP Q26a.
+
+We were at **Checkpoint 2** when the user asked for this handoff — backend complete + Excel polished, waiting for the user to verify the workbooks look right before charging into Step 6 (Streamlit UI).
 
 ## What a fresh agent should do on resume
 
-1. **Greet briefly and confirm Path A vs Path B.**
-2. **Read [MASTERECAP.md](MASTERECAP.md)** before touching code — every design call is captured there.
-3. **Run `pytest -q` from `C:\Users\Frosty\PMsuite`** to confirm the test suite still passes.
-4. **Start at Step 1: Backward-pass CPM + total float.** Plan: implement `_backward_pass()` in `gantt_builder/critical_path.py`, populate `total_float` dict, mark `critical_task_ids` where float == 0, exclude completed tasks. Add `test_critical_path.py` with at least 3 cases (linear chain, parallel diamond, completed-task exclusion). Commit + push.
+1. Greet, confirm the user is ready to continue Path A.
+2. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
+3. Run `pytest -q` from `C:\Users\Frosty\PMsuite` — should show 70 passing.
+4. Confirm the user's verdict on the latest demo workbooks (Checkpoint 2 visual review). If they say "go", start Step 6.
+
+## Step 6 — Streamlit editing surface — concrete starting plan
+
+The current `ui/streamlit_app.py` is read-only: dropdown + display + Validate / Save / Build Excel buttons. Step 6 expands it without changing the underlying API contract.
+
+**Required additions:**
+
+1. **`st.session_state` model for project + dirty flag:**
+   ```python
+   if "project" not in st.session_state:
+       st.session_state.project = None
+       st.session_state.project_path = None
+       st.session_state.dirty = False
+       st.session_state.last_auto_catchup_result = None
+       st.session_state.last_completion_result = None
+   ```
+2. **Editable task table** using `st.data_editor`. Each column gets an appropriate editor (text input for name, dropdown for location/calendar_mode, number for cycle_time/delay_days, date picker for manual_start_date / actual_completion_date, checkbox for is_complete).
+3. **Add Task button** that creates a new row via `next_task_id` and increments the counter.
+4. **Delete Task button** that rejects deletion if any task depends on the target (surface affected IDs).
+5. **Dependency editor** as a popover or expander per row. Multi-select of other task IDs, dropdown for type (FS/SS/FF/SF), number input for lag_days.
+6. **"Dependency Explanation" expander** above the task table, containing plain-language descriptions of each type (text per STREAMLIT.md §planned features).
+7. **Mark-complete checkbox** wired through `api.mark_task_complete()` so cascades fire automatically. When checked, auto-fills `actual_completion_date` to today. Surface a banner if children with earlier dates were preserved.
+8. **Dirty-state badge** ("● Unsaved changes") near the project header that appears any time in-memory state diverges from on-disk.
+9. **Browser `beforeunload` warning** via `st.components.v1.html` injecting `window.onbeforeunload`. Wire to `st.session_state.dirty`.
+10. **Auto-catchup-on-load prompt**: when `api.is_auto_catchup_pending(project)` returns True, show a modal/expander with the `preview_auto_catchup` result. Buttons: **Apply** (calls `apply_auto_catchup`, shows banner with **Undo this batch**), **Skip for now**.
+11. **New Project form** in the sidebar — `st.form` with name, ID slug (auto-suggested), timezone (default America/Chicago), default location, output directory. Writes a skeleton JSON to `projects/<slug>.json`.
+12. **Project switcher confirmation dialog** when switching with `dirty=True`.
+
+**Tests to add alongside** (or right after — UI is harder to test, structural is enough):
+
+- `tests/test_api.py` extended: verify `add_task` / `update_task` / `delete_task` API stubs work (these don't exist yet — the Streamlit will need them in api.py).
+- Smoke test that the Streamlit script imports cleanly and `main()` runs without errors when given a fresh `st.session_state`.
+
+**Implementation order suggestion:**
+1. Add `add_task` / `update_task` / `delete_task` / `add_dependency` / `remove_dependency` to the API (these are needed by the UI but also useful standalone).
+2. Refactor Streamlit to use `st.session_state` for the project.
+3. Replace `st.dataframe` with `st.data_editor`.
+4. Wire add/delete buttons.
+5. Wire the dependency editor.
+6. Wire mark-complete.
+7. Add the dirty badge and `beforeunload`.
+8. Add auto-catchup-on-load prompt.
+9. Add New Project form.
+
+**Heads-up — Streamlit complexity:** `st.data_editor` is powerful but state management around it (especially undoing changes, syncing with `st.session_state`) is fiddly. Budget extra debugging time.
 
 ## Suggested skills for next session
 
-- **No `grill-me` needed** — the grilling session is closed, decisions locked.
-- **No `handoff` needed mid-stream** — this doc is the persistent record.
-- Plain `Edit` / `Write` / `Bash` / `Read` / `Glob` / `Grep` tool use is the entire next-session toolkit.
-- If a true new ambiguity surfaces, ask the user directly rather than spawn an agent.
+- **No `grill-me` or `handoff` needed** mid-stream.
+- Plain `Edit` / `Write` / `Bash` / `PowerShell` / `Read` / `Glob` / `Grep`.
+- For Streamlit testing, may want to launch Streamlit via PowerShell with `run_in_background=True` and observe via curl or screenshots. Or use `streamlit run --headless --server.port 8502` and rely on Python imports for behavior tests.
 
-## Where things live
+## Local layout (unchanged from initial scaffold)
 
 ```
-C:\Users\Frosty\PMsuite\          # local clone, ~/.git pushed to GitHub
-├── DESIGN.md                     # architecture-level design rationale
-├── MASTERECAP.md                 # all 26 grilling decisions in one place
-├── API.md                        # Python API contract
-├── JSONFILE.md                   # JSON schema reference
-├── EXCELBUILDER.md               # Excel output spec
-├── STREAMLIT.md                  # UI spec
+C:\Users\Frosty\PMsuite\          # local clone; pushed to https://github.com/Frosty-STI/PMSuite
 ├── HANDOFF.md                    # this file
-├── README.md                     # user-facing intro
-├── gantt_builder/                # the Python package (walking skeleton)
-├── ui/streamlit_app.py           # walking-skeleton Streamlit shell
-├── tests/                        # 11 passing tests
-├── examples/                     # small_demo.json (working) + npde_demo.json (stub)
-└── output/                       # gitignored, generated Excel goes here
+├── MASTERECAP.md                 # all decisions including Q27/Q28 addenda
+├── DESIGN.md                     # architecture-level design rationale
+├── API.md                        # Python API contract (with mark_complete, baseline, delays funcs)
+├── JSONFILE.md                   # JSON schema (with baseline_start/finish)
+├── EXCELBUILDER.md               # Excel spec (Option E implemented)
+├── STREAMLIT.md                  # UI spec (Step 6 work pending)
+├── README.md
+├── pyproject.toml
+├── .gitignore
+├── gantt_builder/
+│   ├── api.py
+│   ├── baseline.py
+│   ├── completion.py
+│   ├── critical_path.py
+│   ├── delays.py
+│   ├── errors.py
+│   ├── excel_builder.py
+│   ├── locations.py
+│   ├── logging_config.py
+│   ├── models.py
+│   ├── project_io.py
+│   ├── scheduler.py
+│   └── validation.py
+├── ui/streamlit_app.py
+├── tests/                        # 8 test files, 70 tests passing
+├── examples/                     # both demos have real holidays + baseline
+├── output/                       # gitignored generated Excel files
+└── .logs/gantt_builder.log
 ```
 
 User auto-memory at `C:\Users\Frosty\.claude\projects\C--Users-Frosty\memory\`:
-- `user_domain_semiconductor_npde.md` — domain context (NPDE, e-day vs working-day, global sites).
+- `user_domain_semiconductor_npde.md` — NPDE domain context (e-day vs working-day, global sites).
 - `MEMORY.md` — index.
+
+## Critical knowledge for next agent
+
+- **Git identity for commits** — use inline `-c user.name="Frosty-STI" -c user.email="s1lv3rstreak@gmail.com"` per commit; do NOT modify the global git config (per safety guidelines).
+- **`gh` CLI** is not on PATH; plain `git push` works against the existing remote.
+- **`streamlit.exe`** at `C:\Users\Frosty\AppData\Roaming\Python\Python312\Scripts\` isn't on PATH; use `python -m streamlit run ui\streamlit_app.py`.
+- **PowerShell prints stderr as red even on success** — pip install warnings and Python logging both go through stderr but don't indicate errors. Always check the actual content / exit code.
+- **Tests run from PowerShell** with `python -m pytest -q "C:\Users\Frosty\PMsuite\tests" --rootdir "C:\Users\Frosty\PMsuite"`.
+- **`-m "not slow"` flag** skips the (not-yet-written) performance tests; safe to always use.
+- **Pydantic v2 model serialization** uses `model_dump(mode="json", exclude_defaults=False, exclude_none=False)` for canonical output. Every save updates `project.updated_at` automatically.
+- **Demo project files get rewritten** when run through save_project — this is intentional (canonical formatting + updated_at), but means the linter / system may flag them as "modified outside the conversation." Don't revert.
+- **Color palette is locked** at MASTERECAP Q26a values. Don't redecorate without an explicit user ask.
 
 ## Tone the user expects
 
 - Crisp, decisive. They've been answering "your suggestion" or specific overrides — they know what they want.
 - One question at a time when ambiguity arises.
-- Don't ask permission for things already authorized ("push to github freely", per-feature commits, MIT license).
-- Don't pad responses. The user has been engaged for many hours; respect their attention.
-
-## Final notes
-
-- User is running Python 3.12.1 on Windows 11. Package installed via `pip install --user -e "C:\Users\Frosty\PMsuite[dev]"`.
-- `streamlit.exe` is at `C:\Users\Frosty\AppData\Roaming\Python\Python312\Scripts\` — not on PATH; user must use `python -m streamlit run ui\streamlit_app.py` or add to PATH.
-- `gh` CLI was installed during the session but isn't on PATH; not blocking — plain `git push` works with the existing remote.
-- Git identity was set inline for the walking-skeleton commit using `user.name="Frosty-STI"` and `user.email="s1lv3rstreak@gmail.com"`. Future commits should use the same identity until the user configures it permanently.
-- Latest model: Opus 4.7 (`claude-opus-4-7`). Switched mid-session per user `/model` toggles.
+- Don't ask permission for things already authorized (push to GitHub, MIT license, per-feature commits).
+- Don't pad. The user has been engaged for many hours; respect their attention.
+- Tell them which commit just landed and what to verify at checkpoints. End each step with "go?" or a clear question.

@@ -118,6 +118,8 @@ Each entry is a task. Tasks reference each other by ID for dependencies and pare
   "calendar_mode":           "e_days",
   "cycle_time_days":         21,
   "manual_start_date":       "2026-05-18",
+  "baseline_start":          "2026-05-18",
+  "baseline_finish":         "2026-06-07",
   "dependencies":            [ { "id": "TASK-000", "type": "FS", "lag_days": 0 } ],
   "parent_id":               null,
   "is_complete":             false,
@@ -135,8 +137,10 @@ Each entry is a task. Tasks reference each other by ID for dependencies and pare
 | `name`                   | string                                   | yes      | —       | User-provided. May change without breaking dependencies (IDs are stable). |
 | `completion_location`    | enum                                     | yes      | —       | One of: `USA`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`. |
 | `calendar_mode`          | `"working_days" \| "e_days"`             | yes      | —       | `e_days` counts every calendar day (e.g., oven cycles). `working_days` counts only the location's working-week minus its holidays. |
-| `cycle_time_days`        | int \| null                              | yes if leaf, MUST be null if parent | —     | Inclusive. Minimum 1 for leaves. Parents derive duration from children — `cycle_time_days` MUST be unset for parents (else `ParentHasCycleTimeError`). |
+| `cycle_time_days`        | int \| null                              | yes if leaf, MUST be null if parent | —     | Inclusive. Minimum 1 for leaves. Parents derive duration from children — `cycle_time_days` MUST be unset for parents (else `ParentHasCycleTimeError`). Excel column header: **"Cycle Time (Days)"**. |
 | `manual_start_date`      | ISO date string \| null                  | required for leaves with no dependencies, otherwise optional | `null` | Acts as a **floor** when present. Combined with dependency-driven starts via max. |
+| `baseline_start`         | ISO date string \| null                  | no       | `null`  | The user-committed planned start, captured via `set_project_baseline()`. Does NOT shift with delays or completion — represents the original plan for variance reporting. None means baseline not yet set. |
+| `baseline_finish`        | ISO date string \| null                  | no       | `null`  | Symmetric to `baseline_start` — the user-committed planned finish. |
 | `dependencies`           | array of Dependency (object or string)   | no       | `[]`    | Bare string shorthand `["TASK-001"]` accepted; normalized to object form on load. |
 | `parent_id`              | string \| null                           | no       | `null`  | Must reference an existing task ID. No cycles allowed. |
 | `is_complete`            | bool                                     | no       | `false` | If `true`, `actual_completion_date` is required. |

@@ -405,6 +405,70 @@ Holiday seed (e.g., `holidays.Taiwan()` returning Feb 10 for Lunar New Year) is 
 
 ---
 
+---
+
+## Implementation-phase addenda
+
+Decisions made during the autonomous implementation push (after the original Q1–Q26 grilling session).
+
+## Q27 — Baseline fields on Task
+
+**Decision:** Add `baseline_start: date | None = None` and `baseline_finish: date | None = None` to the Task model. Provide a `set_project_baseline(project, overwrite=False)` API that snapshots current `computed_start` / `computed_finish` into the baseline fields for every task. The baseline never changes when delays or completion shift the live schedule — it represents the user-committed plan for variance reporting.
+
+**Why:** Project managers expect a "baseline" reference in any Gantt tool (MS Project, Primavera, etc.). Without a stored baseline, the Gantt only shows current state; users can't tell whether a task is running ahead/behind the original plan. Adding baseline lets Excel surface "Baseline Start" / "Baseline Finish" alongside "Computed Start" / "Computed Finish" for variance analysis.
+
+**Mechanics:** `set_project_baseline()` runs the scheduler, then for each task: if `baseline_start is None` (or `overwrite=True`), set `baseline_start = computed_start` and `baseline_finish = computed_finish`. The baseline values persist in JSON and survive saves. Re-baselining is allowed via `overwrite=True` (e.g., after scope changes accepted).
+
+**Visible at:** frozen-pane columns in Day View and Week View, plus Schedule Calculations sheet.
+
+---
+
+## Q28 — Column header naming for Cycle Time
+
+**Decision:** Change "Cycle Time" column header to **"Cycle Time (Days)"** in both Day View / Week View frozen pane AND Schedule Calculations sheet. JSON field name stays `cycle_time_days`.
+
+**Why:** When viewing the Gantt without the JSON schema in mind, "Cycle Time" alone is ambiguous (days? hours? working days?). The "(Days)" suffix in the header eliminates that ambiguity for end users. Internal field name remains `cycle_time_days` for consistency with code.
+
+---
+
+## Q29 — Real holiday seeding for demo projects
+
+**Decision:** Seed real 2026–2027 holidays from the Python `holidays` library into both `examples/small_demo.json` and `examples/npde_demo.json`. Mark each entry with `source: "seeded"` so future re-seed operations can detect them as library-derived.
+
+**Why:** Demonstrates the per-location holiday model authentically. With real holidays:
+- `small_demo` has 27 US holidays.
+- `npde_demo` has 173 holidays across USA (27), MLA (41), TAI (46), FR-BIP (24), AIZU (35).
+
+Real holidays push working-day task dates, exercise the holiday rendering in Excel, and surface multi-location holiday overlap in column headers (e.g., Christmas observed by USA + FR-BIP + AIZU).
+
+---
+
+## Q30 — Forward-pass scheduling treats parent dependencies as leaf-only
+
+**Decision (interim, known limitation):** The current scheduler's forward pass only handles dependencies where both predecessor AND successor are leaves. Dependencies that involve parent tasks (a leaf depending on a parent, or a parent having dependencies) are silently ignored by the scheduler — the dep is treated as if it didn't exist.
+
+**Why this is a limitation:** Q7b explicitly allows parents to have their own dependencies. The walking skeleton doesn't yet handle this case correctly. The forward pass schedules leaves first in topological order, then rolls up parents. Leaves depending on parents fail because the parent isn't yet scheduled when the leaf is processed.
+
+**Status:** Tracked. Demo projects avoid this case (no leaf depends on a parent in `small_demo.json` or `npde_demo.json`). To be fixed in a future commit before this scenario is needed in production. The validation layer accepts these structures but the scheduler silently drops the constraint.
+
+---
+
+## Q31 — Overdue tail rendering extends bar to today
+
+**Decision:** For an incomplete task where `today > effective_finish`, the Day View renders a red "overdue" segment from `effective_finish + 1` through `today` (inclusive). Visually, this extends the bar past where it was supposed to end to convey "we should have been done by X but we're at Y."
+
+**Why:** Without this tail, an overdue task would look the same as a current task that finished today. The red tail makes overdue tasks immediately visible at a glance. The Critical Path Notes sheet also lists overdue tasks separately.
+
+---
+
+## Q32 — Today vertical line implementation
+
+**Decision:** Today appears in both the Day View column header (yellow fill `#FFF8C4`) AND as a thick black left border on every body cell in today's column. The body-cell border is implemented by precomputing every status × critical × today format combination (~30 distinct formats). Empty cells in today's column receive a `empty_today` format that combines the yellow fill with the black left border.
+
+**Why:** A header-only indicator is easy to miss when scrolling through hundreds of tasks. The vertical line on every body cell makes today findable from anywhere on the sheet.
+
+---
+
 ## Cross-references
 
 - [DESIGN.md](DESIGN.md) — architecture-level rationale, organized by topic.
