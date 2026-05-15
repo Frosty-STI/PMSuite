@@ -55,6 +55,11 @@ class Task(BaseModel):
 
     Parents are identified by having other tasks with parent_id == this.id.
     Parents must NOT carry cycle_time_days (validation enforces).
+
+    `baseline_start` and `baseline_finish` are the user-committed planned
+    dates captured by `set_project_baseline()`. They never change with
+    delays or completion — they represent the original plan for variance
+    reporting in the Gantt views. None means baseline has not yet been set.
     """
 
     id: str
@@ -63,6 +68,8 @@ class Task(BaseModel):
     calendar_mode: Literal["working_days", "e_days"]
     cycle_time_days: int | None = None
     manual_start_date: date | None = None
+    baseline_start: date | None = None
+    baseline_finish: date | None = None
     dependencies: list[Dependency] = Field(default_factory=list)
     parent_id: str | None = None
     is_complete: bool = False

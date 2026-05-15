@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from .baseline import set_project_baseline as _set_baseline
 from .completion import (
     mark_task_complete as _mark_complete,
     undo_complete_batch as _undo_complete,
@@ -127,3 +128,13 @@ def unmark_task_complete(project: Project, task_id: str) -> None:
 def undo_complete_batch(project: Project, result) -> list[str]:
     """Reverse a mark-complete batch. Returns restored task IDs."""
     return _undo_complete(project, result)
+
+
+# -- Baseline --------------------------------------------------------------
+
+def set_project_baseline(project: Project, overwrite: bool = False):
+    """Snapshot current computed dates into each task's baseline_start /
+    baseline_finish. Skips tasks that already have a baseline unless
+    overwrite=True. Returns a BaselineResult.
+    """
+    return _set_baseline(project, overwrite=overwrite)

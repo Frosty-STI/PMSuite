@@ -111,32 +111,56 @@ def _compute_axis(project: Project, schedule: dict[str, ScheduledTask]) -> tuple
     return start_axis, end_axis
 
 
+_METADATA_COLS = ["TASK ID", "Name", "Location", "Cycle Time", "Baseline Start", "Baseline Finish"]
+_METADATA_COL_COUNT = len(_METADATA_COLS)
+
+
+def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
+    """Write the six frozen-pane metadata columns for one task row."""
+    sheet.write(row_idx, 0, task.id, formats["task_id"])
+    sheet.write(row_idx, 1, task.name, formats["task_name"])
+    sheet.write(row_idx, 2, task.completion_location, formats["task_name"])
+    sheet.write(row_idx, 3,
+                task.cycle_time_days if task.cycle_time_days is not None else "",
+                formats["task_name"])
+    sheet.write(row_idx, 4,
+                task.baseline_start.isoformat() if task.baseline_start else "",
+                formats["task_name"])
+    sheet.write(row_idx, 5,
+                task.baseline_finish.isoformat() if task.baseline_finish else "",
+                formats["task_name"])
+
+
+def _set_metadata_column_widths(sheet) -> None:
+    """Apply the standard width set for the frozen metadata block."""
+    sheet.set_column(0, 0, 12)   # TASK ID
+    sheet.set_column(1, 1, 28)   # Name
+    sheet.set_column(2, 2, 10)   # Location
+    sheet.set_column(3, 3, 8)    # Cycle Time
+    sheet.set_column(4, 5, 13)   # Baseline Start / Baseline Finish
+
+
 def _build_day_view(workbook, project, schedule, formats, axis_start: date, axis_end: date) -> None:
     sheet = workbook.add_worksheet("Day View")
 
-    metadata_cols = ["TASK ID", "Name", "Location"]
-    for col, header in enumerate(metadata_cols):
+    for col, header in enumerate(_METADATA_COLS):
         sheet.write(0, col, header, formats["header"])
 
     date_columns = []
     current = axis_start
-    col = len(metadata_cols)
+    col = _METADATA_COL_COUNT
     while current <= axis_end:
         sheet.write(0, col, current.isoformat(), formats["header"])
         date_columns.append((col, current))
         current += timedelta(days=1)
         col += 1
 
-    sheet.set_column(0, 0, 12)
-    sheet.set_column(1, 1, 28)
-    sheet.set_column(2, 2, 10)
-    sheet.set_column(len(metadata_cols), col - 1, 4)
-    sheet.freeze_panes(1, len(metadata_cols))
+    _set_metadata_column_widths(sheet)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 4)
+    sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     for row_idx, task in enumerate(project.tasks, start=1):
-        sheet.write(row_idx, 0, task.id, formats["task_id"])
-        sheet.write(row_idx, 1, task.name, formats["task_name"])
-        sheet.write(row_idx, 2, task.completion_location, formats["task_name"])
+        _write_task_metadata_row(sheet, row_idx, task, formats)
 
         s = schedule.get(task.id)
         if not s:
@@ -155,29 +179,24 @@ def _build_day_view(workbook, project, schedule, formats, axis_start: date, axis
 def _build_week_view(workbook, project, schedule, formats, axis_start: date, axis_end: date) -> None:
     sheet = workbook.add_worksheet("Week View")
 
-    metadata_cols = ["TASK ID", "Name", "Location"]
-    for col, header in enumerate(metadata_cols):
+    for col, header in enumerate(_METADATA_COLS):
         sheet.write(0, col, header, formats["header"])
 
     week_columns = []
     current = axis_start
-    col = len(metadata_cols)
+    col = _METADATA_COL_COUNT
     while current <= axis_end:
         sheet.write(0, col, current.isoformat(), formats["header"])
         week_columns.append((col, current, current + timedelta(days=6)))
         current += timedelta(days=7)
         col += 1
 
-    sheet.set_column(0, 0, 12)
-    sheet.set_column(1, 1, 28)
-    sheet.set_column(2, 2, 10)
-    sheet.set_column(len(metadata_cols), col - 1, 10)
-    sheet.freeze_panes(1, len(metadata_cols))
+    _set_metadata_column_widths(sheet)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 10)
+    sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     for row_idx, task in enumerate(project.tasks, start=1):
-        sheet.write(row_idx, 0, task.id, formats["task_id"])
-        sheet.write(row_idx, 1, task.name, formats["task_name"])
-        sheet.write(row_idx, 2, task.completion_location, formats["task_name"])
+        _write_task_metadata_row(sheet, row_idx, task, formats)
 
         s = schedule.get(task.id)
         if not s:
@@ -195,7 +214,8 @@ def _build_schedule_calculations(workbook, project, schedule, critical_path, for
 
     columns = [
         "TASK ID", "Name", "Hierarchy Level", "Parent ID", "Location", "Calendar Mode",
-        "Cycle Time", "Manual Start Date", "Computed Start", "Computed Finish",
+        "Cycle Time", "Manual Start Date", "Baseline Start", "Baseline Finish",
+        "Computed Start", "Computed Finish",
         "Delay Days", "Effective Finish", "Actual Completion Date", "Is Complete",
         "Dependencies", "Total Float", "Is Critical", "Was On Critical Path",
         "Downstream Impact", "Validation Warnings",
@@ -219,18 +239,20 @@ def _build_schedule_calculations(workbook, project, schedule, critical_path, for
         sheet.write(row_idx, 5, task.calendar_mode)
         sheet.write(row_idx, 6, task.cycle_time_days if task.cycle_time_days is not None else "")
         sheet.write(row_idx, 7, task.manual_start_date.isoformat() if task.manual_start_date else "")
-        sheet.write(row_idx, 8, s.computed_start.isoformat() if s else "")
-        sheet.write(row_idx, 9, s.computed_finish.isoformat() if s else "")
-        sheet.write(row_idx, 10, task.delay_days)
-        sheet.write(row_idx, 11, s.effective_finish.isoformat() if s else "")
-        sheet.write(row_idx, 12, task.actual_completion_date.isoformat() if task.actual_completion_date else "")
-        sheet.write(row_idx, 13, task.is_complete)
-        sheet.write(row_idx, 14, deps_str)
-        sheet.write(row_idx, 15, critical_path.total_float.get(task.id, 0))
-        sheet.write(row_idx, 16, task.id in critical_path.critical_task_ids)
-        sheet.write(row_idx, 17, history_map.get(task.id, False))
-        sheet.write(row_idx, 18, downstream)
-        sheet.write(row_idx, 19, "")
+        sheet.write(row_idx, 8, task.baseline_start.isoformat() if task.baseline_start else "")
+        sheet.write(row_idx, 9, task.baseline_finish.isoformat() if task.baseline_finish else "")
+        sheet.write(row_idx, 10, s.computed_start.isoformat() if s else "")
+        sheet.write(row_idx, 11, s.computed_finish.isoformat() if s else "")
+        sheet.write(row_idx, 12, task.delay_days)
+        sheet.write(row_idx, 13, s.effective_finish.isoformat() if s else "")
+        sheet.write(row_idx, 14, task.actual_completion_date.isoformat() if task.actual_completion_date else "")
+        sheet.write(row_idx, 15, task.is_complete)
+        sheet.write(row_idx, 16, deps_str)
+        sheet.write(row_idx, 17, critical_path.total_float.get(task.id, 0))
+        sheet.write(row_idx, 18, task.id in critical_path.critical_task_ids)
+        sheet.write(row_idx, 19, history_map.get(task.id, False))
+        sheet.write(row_idx, 20, downstream)
+        sheet.write(row_idx, 21, "")
 
     sheet.freeze_panes(1, 2)
     sheet.set_column(0, 0, 12)
