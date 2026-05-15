@@ -12,6 +12,11 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from .completion import (
+    mark_task_complete as _mark_complete,
+    undo_complete_batch as _undo_complete,
+    unmark_task_complete as _unmark_complete,
+)
 from .critical_path import compute_critical_path
 from .delays import (
     apply_auto_catchup as _apply_auto_catchup,
@@ -102,3 +107,23 @@ def undo_delay_batch(project: Project, batch) -> list[str]:
 def is_auto_catchup_pending(project: Project, today=None) -> bool:
     """True if `apply_auto_catchup` would actually do something."""
     return _is_pending(project, today=today)
+
+
+# -- Completion ------------------------------------------------------------
+
+def mark_task_complete(project: Project, task_id: str, completion_date=None):
+    """Mark a task complete; if it's a parent, cascade to all descendants.
+
+    Returns a CompletionResult. Pass it to `undo_complete_batch` to revert.
+    """
+    return _mark_complete(project, task_id, completion_date=completion_date)
+
+
+def unmark_task_complete(project: Project, task_id: str) -> None:
+    """Toggle is_complete: true → false on one task. Does not cascade."""
+    _unmark_complete(project, task_id)
+
+
+def undo_complete_batch(project: Project, result) -> list[str]:
+    """Reverse a mark-complete batch. Returns restored task IDs."""
+    return _undo_complete(project, result)

@@ -142,7 +142,7 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
     # Parents inherit critical status from any critical descendant
     parents = [t for t in project.tasks if project.has_subtasks(t.id)]
     for parent in parents:
-        descendants = _all_descendant_leaf_ids(project, parent.id)
+        descendants = project.all_descendant_leaf_ids(parent.id)
         if not descendants:
             total_float[parent.id] = 0
             continue
@@ -165,22 +165,3 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
         latest_start=latest_start,
         latest_finish=latest_finish,
     )
-
-
-def _all_descendant_leaf_ids(project: Project, task_id: str) -> list[str]:
-    """Return IDs of all leaf descendants of the given task."""
-    result: list[str] = []
-    stack = [task_id]
-    while stack:
-        current = stack.pop()
-        children = project.children_of(current)
-        if not children:
-            if current != task_id:
-                result.append(current)
-            continue
-        for child in children:
-            if project.has_subtasks(child.id):
-                stack.append(child.id)
-            else:
-                result.append(child.id)
-    return result

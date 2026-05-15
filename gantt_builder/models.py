@@ -161,3 +161,22 @@ class Project(BaseModel):
 
     def is_leaf(self, task_id: str) -> bool:
         return not self.has_subtasks(task_id)
+
+    def all_descendant_ids(self, task_id: str) -> list[str]:
+        """All descendant task IDs (leaves and intermediate parents) under task_id."""
+        result: list[str] = []
+        visited: set[str] = {task_id}
+        stack: list[str] = [task_id]
+        while stack:
+            current = stack.pop()
+            for child in self.children_of(current):
+                if child.id in visited:
+                    continue
+                visited.add(child.id)
+                result.append(child.id)
+                stack.append(child.id)
+        return result
+
+    def all_descendant_leaf_ids(self, task_id: str) -> list[str]:
+        """Only the LEAF descendants under task_id."""
+        return [d for d in self.all_descendant_ids(task_id) if not self.has_subtasks(d)]
