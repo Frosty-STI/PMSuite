@@ -1,14 +1,29 @@
-"""Excel workbook generation via xlsxwriter.
+"""Excel workbook generation via xlsxwriter (full Option E rendering).
 
-Walking-skeleton: produces a valid 4-sheet workbook with task data populated.
-- Day View: task rows + date columns, basic blue cells for planned ranges
-- Week View: task rows + week columns
-- Schedule Calculations: full audit table per DESIGN.md Q26b
-- Critical Path Notes: summary section
+Produces a 4-sheet workbook:
+  - Day View                 — segmented colored cell bars, per-day resolution
+  - Week View                — same span, weekly aggregation
+  - Schedule Calculations    — auditable per-task table
+  - Critical Path Notes      — risk/timing dashboard
 
-Frozen panes, conditional coloring per status, holiday/weekend shading, parent
-summary bars, and the full Option E rendering described in DESIGN.md Q15 will be
-added incrementally. The file is structurally complete and openable.
+Bar segments per Option E:
+  - Planned (incomplete)    : muted blue
+  - Completed (full bar)    : green
+  - Delay extension         : orange (computed_finish < d <= effective_finish)
+  - Overdue tail            : red    (today > effective_finish, incomplete)
+  - Critical path           : dark red top/bottom border on the bar
+  - Today column            : thick black left border + yellow header
+  - Weekend / holiday gap   : light gray (only for working_day tasks on their
+                              own non-working days INSIDE the bar range)
+  - Parent summary          : dark gray with cap borders
+
+Column header styling:
+  - Today column      : yellow fill
+  - USA weekend       : light gray
+  - Holiday (any loc) : darker gray + holiday name appended
+
+Frozen-pane metadata columns: TASK ID, Name, Location, Cycle Time (Days),
+Baseline Start, Baseline Finish.
 """
 
 from __future__ import annotations
@@ -27,16 +42,21 @@ from .scheduler import ScheduledTask
 _log = get_logger(__name__)
 
 
+# Frozen-pane metadata columns (left of the date axis)
+_METADATA_COLS = ["TASK ID", "Name", "Location", "Cycle Time (Days)", "Baseline Start", "Baseline Finish"]
+_METADATA_COL_COUNT = len(_METADATA_COLS)
+
+
+# -------------------------------------------------------------------------
+# Public entry point
+
 def build_excel(
     project: Project,
     schedule: dict[str, ScheduledTask],
     critical_path: CriticalPathResult,
     output_dir: str | Path | None = None,
 ) -> Path:
-    """Generate the Excel workbook and return the output path.
-
-    Filename pattern: gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx
-    """
+    """Generate the Excel workbook and return the output path."""
     output_dir = Path(output_dir) if output_dir else Path(project.settings.output_directory)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +64,6 @@ def build_excel(
     filename = f"gantt_{project.project.id}_{timestamp}.xlsx"
     path = output_dir / filename
 
-    # Collision-safe (rare same-second case)
     counter = 2
     while path.exists():
         filename = f"gantt_{project.project.id}_{timestamp}_{counter}.xlsx"
@@ -52,13 +71,11 @@ def build_excel(
         counter += 1
 
     workbook = xlsxwriter.Workbook(str(path))
-
     formats = _build_formats(workbook)
-
     axis_start, axis_end = _compute_axis(project, schedule)
 
-    _build_day_view(workbook, project, schedule, formats, axis_start, axis_end)
-    _build_week_view(workbook, project, schedule, formats, axis_start, axis_end)
+    _build_day_view(workbook, project, schedule, critical_path, formats, axis_start, axis_end)
+    _build_week_view(workbook, project, schedule, critical_path, formats, axis_start, axis_end)
     _build_schedule_calculations(workbook, project, schedule, critical_path, formats)
     _build_critical_path_notes(workbook, project, schedule, critical_path, formats)
 
@@ -67,23 +84,90 @@ def build_excel(
     return path
 
 
-def _build_formats(workbook) -> dict:
-    return {
-        "header":         workbook.add_format({"bold": True, "bg_color": "#D9D9D9", "border": 1, "align": "center"}),
-        "task_id":        workbook.add_format({"font_name": "Consolas", "border": 1}),
-        "task_name":      workbook.add_format({"border": 1}),
-        "date":           workbook.add_format({"num_format": "yyyy-mm-dd", "border": 1}),
-        "planned":        workbook.add_format({"bg_color": "#4A90D9", "border": 1}),
-        "completed":      workbook.add_format({"bg_color": "#2E8B57", "border": 1}),
-        "delayed":        workbook.add_format({"bg_color": "#E68A00", "border": 1}),
-        "overdue":        workbook.add_format({"bg_color": "#D9534F", "border": 1}),
-        "today":          workbook.add_format({"bg_color": "#FFF8C4"}),
-        "weekend":        workbook.add_format({"bg_color": "#F0F0F0"}),
-        "holiday":        workbook.add_format({"bg_color": "#E0E0E0"}),
-        "parent_summary": workbook.add_format({"bg_color": "#555555", "font_color": "white", "border": 1}),
-        "summary_label":  workbook.add_format({"bold": True}),
-    }
+# -------------------------------------------------------------------------
+# Format precomputation
 
+# Color palette (locked per DESIGN.md §14.4 / Q26a)
+_C_PLANNED   = "#4A90D9"
+_C_COMPLETED = "#2E8B57"
+_C_DELAYED   = "#E68A00"
+_C_OVERDUE   = "#D9534F"
+_C_WEEKEND   = "#F0F0F0"
+_C_HOLIDAY   = "#E0E0E0"
+_C_TODAY     = "#FFF8C4"
+_C_PARENT    = "#555555"
+_C_CRITICAL_BORDER = "#8B0000"
+_C_HEADER    = "#D9D9D9"
+
+
+def _build_formats(workbook) -> dict:
+    formats: dict = {}
+
+    # -- Header variants -----------------------------------------------
+    base_header = {
+        "bold": True, "border": 1, "align": "center", "valign": "vcenter",
+        "text_wrap": True, "font_size": 9,
+    }
+    formats["header"]         = workbook.add_format({**base_header, "bg_color": _C_HEADER})
+    formats["header_today"]   = workbook.add_format({**base_header, "bg_color": _C_TODAY})
+    formats["header_weekend"] = workbook.add_format({**base_header, "bg_color": _C_WEEKEND})
+    formats["header_holiday"] = workbook.add_format({**base_header, "bg_color": _C_HOLIDAY})
+
+    # -- Task metadata cells -------------------------------------------
+    formats["task_id"]   = workbook.add_format({"font_name": "Consolas", "border": 1})
+    formats["task_name"] = workbook.add_format({"border": 1})
+
+    # -- Body cell formats (one per status × critical × today combination) -
+    body_status_fills = {
+        "planned":   _C_PLANNED,
+        "completed": _C_COMPLETED,
+        "delayed":   _C_DELAYED,
+        "overdue":   _C_OVERDUE,
+        "parent":    _C_PARENT,
+    }
+    for status, fill in body_status_fills.items():
+        for is_critical in (False, True):
+            for is_today in (False, True):
+                key = status
+                if is_critical:
+                    key += "_critical"
+                if is_today:
+                    key += "_today"
+                spec = {"bg_color": fill, "border": 1}
+                if is_critical and status != "overdue":
+                    # Critical: thicker dark-red top + bottom border
+                    spec.update({"top": 2, "bottom": 2,
+                                 "top_color": _C_CRITICAL_BORDER,
+                                 "bottom_color": _C_CRITICAL_BORDER})
+                if is_today:
+                    spec.update({"left": 5, "left_color": "#000000"})
+                formats[key] = workbook.add_format(spec)
+
+    # -- Non-working-day "gap" cells inside a working-day task's bar ---
+    for is_today in (False, True):
+        spec = {"bg_color": _C_WEEKEND, "border": 1, "border_color": "#CCCCCC"}
+        if is_today:
+            spec.update({"left": 5, "left_color": "#000000"})
+        formats["weekend_gap_today" if is_today else "weekend_gap"] = workbook.add_format(spec)
+
+        spec_h = {"bg_color": _C_HOLIDAY, "border": 1, "border_color": "#CCCCCC"}
+        if is_today:
+            spec_h.update({"left": 5, "left_color": "#000000"})
+        formats["holiday_gap_today" if is_today else "holiday_gap"] = workbook.add_format(spec_h)
+
+    # -- Empty cell in today's column (yellow tint to indicate today line) -
+    formats["empty_today"] = workbook.add_format({
+        "bg_color": _C_TODAY, "left": 5, "left_color": "#000000",
+    })
+
+    # -- Critical Path Notes / Schedule Calculations helpers -----------
+    formats["summary_label"] = workbook.add_format({"bold": True})
+
+    return formats
+
+
+# -------------------------------------------------------------------------
+# Axis computation
 
 def _compute_axis(project: Project, schedule: dict[str, ScheduledTask]) -> tuple[date, date]:
     """Padded + Monday-aligned axis per DESIGN.md Q19."""
@@ -111,9 +195,8 @@ def _compute_axis(project: Project, schedule: dict[str, ScheduledTask]) -> tuple
     return start_axis, end_axis
 
 
-_METADATA_COLS = ["TASK ID", "Name", "Location", "Cycle Time", "Baseline Start", "Baseline Finish"]
-_METADATA_COL_COUNT = len(_METADATA_COLS)
-
+# -------------------------------------------------------------------------
+# Shared row writing helpers
 
 def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
     """Write the six frozen-pane metadata columns for one task row."""
@@ -132,89 +215,244 @@ def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
 
 
 def _set_metadata_column_widths(sheet) -> None:
-    """Apply the standard width set for the frozen metadata block."""
+    """Width spec for the frozen metadata block."""
     sheet.set_column(0, 0, 12)   # TASK ID
     sheet.set_column(1, 1, 28)   # Name
     sheet.set_column(2, 2, 10)   # Location
-    sheet.set_column(3, 3, 8)    # Cycle Time
+    sheet.set_column(3, 3, 8)    # Cycle Time (Days)
     sheet.set_column(4, 5, 13)   # Baseline Start / Baseline Finish
 
 
-def _build_day_view(workbook, project, schedule, formats, axis_start: date, axis_end: date) -> None:
+def _build_holiday_name_map(project: Project) -> dict[date, str]:
+    """For each holiday date, build a summary string spanning all locations.
+
+    Format: "Independence Day (USA); Eid (MLA, TIEMA)"
+    """
+    by_date: dict[date, dict[str, list[str]]] = {}
+    for loc, entries in project.settings.holidays.items():
+        for h in entries:
+            by_date.setdefault(h.date, {}).setdefault(h.name, []).append(loc)
+
+    result: dict[date, str] = {}
+    for d, name_to_locs in by_date.items():
+        parts = [f"{name} ({', '.join(sorted(locs))})" for name, locs in name_to_locs.items()]
+        result[d] = "; ".join(parts)
+    return result
+
+
+# -------------------------------------------------------------------------
+# Day View — full Option E rendering
+
+def _build_day_view(workbook, project: Project, schedule, critical_path, formats,
+                    axis_start: date, axis_end: date) -> None:
     sheet = workbook.add_worksheet("Day View")
+    today = date.today()
+    critical_set = critical_path.critical_task_ids
+    holiday_names = _build_holiday_name_map(project)
 
-    for col, header in enumerate(_METADATA_COLS):
-        sheet.write(0, col, header, formats["header"])
+    # -- Metadata column headers --
+    for c, h in enumerate(_METADATA_COLS):
+        sheet.write(0, c, h, formats["header"])
 
-    date_columns = []
+    # -- Date column headers (with weekday, date, holiday names) --
+    date_columns: list[tuple[int, date]] = []
     current = axis_start
     col = _METADATA_COL_COUNT
     while current <= axis_end:
-        sheet.write(0, col, current.isoformat(), formats["header"])
+        weekday = current.strftime("%a")
+        text = f"{weekday}\n{current.isoformat()}"
+        if current in holiday_names:
+            text += f"\n{holiday_names[current]}"
+
+        is_today_col = (current == today)
+        is_holiday   = current in holiday_names
+        is_weekend   = weekday in ("Sat", "Sun")
+
+        if is_today_col:
+            fmt = formats["header_today"]
+        elif is_holiday:
+            fmt = formats["header_holiday"]
+        elif is_weekend:
+            fmt = formats["header_weekend"]
+        else:
+            fmt = formats["header"]
+
+        sheet.write(0, col, text, fmt)
         date_columns.append((col, current))
         current += timedelta(days=1)
         col += 1
 
+    sheet.set_row(0, 60)  # tall header for multi-line text
     _set_metadata_column_widths(sheet)
     sheet.set_column(_METADATA_COL_COUNT, col - 1, 4)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
+    # -- Task rows --
     for row_idx, task in enumerate(project.tasks, start=1):
         _write_task_metadata_row(sheet, row_idx, task, formats)
-
         s = schedule.get(task.id)
         if not s:
             continue
 
-        for col_idx, d in date_columns:
-            cell_format = None
-            if s.computed_start <= d <= s.computed_finish:
-                cell_format = formats["completed"] if task.is_complete else formats["planned"]
-            elif s.computed_finish < d <= s.effective_finish:
-                cell_format = formats["delayed"]
-            if cell_format:
-                sheet.write_blank(row_idx, col_idx, None, cell_format)
+        is_critical = task.id in critical_set
+
+        if project.has_subtasks(task.id):
+            _render_parent_bar_day(sheet, row_idx, date_columns, s, formats, is_critical, today)
+        else:
+            _render_leaf_bar_day(sheet, row_idx, date_columns, s, task, project,
+                                 formats, is_critical, today)
 
 
-def _build_week_view(workbook, project, schedule, formats, axis_start: date, axis_end: date) -> None:
+def _render_leaf_bar_day(sheet, row_idx, date_columns, s, task, project,
+                          formats, is_critical: bool, today: date) -> None:
+    work_week = set(project.settings.work_weeks.get(task.completion_location, []))
+    holidays = {h.date for h in project.settings.holidays.get(task.completion_location, [])}
+    is_complete = task.is_complete
+
+    # The visual end of the bar — extends to today if overdue
+    if is_complete:
+        bar_end = s.effective_finish
+    elif today > s.effective_finish:
+        bar_end = today
+    else:
+        bar_end = s.effective_finish
+
+    for col_idx, d in date_columns:
+        is_today_col = (d == today)
+
+        if d < s.computed_start or d > bar_end:
+            if is_today_col:
+                sheet.write_blank(row_idx, col_idx, None, formats["empty_today"])
+            continue
+
+        # Inside bar range
+        is_non_working = (task.calendar_mode == "working_days"
+                          and (weekday_code(d) not in work_week or d in holidays))
+        if is_non_working:
+            key = "weekend_gap_today" if is_today_col else "weekend_gap"
+            sheet.write_blank(row_idx, col_idx, None, formats[key])
+            continue
+
+        # Status segment
+        if is_complete:
+            status = "completed"
+        elif d <= s.computed_finish:
+            status = "planned"
+        elif d <= s.effective_finish:
+            status = "delayed"
+        else:  # d <= today, overdue tail
+            status = "overdue"
+
+        key = status
+        if is_critical and status != "overdue":
+            key += "_critical"
+        if is_today_col:
+            key += "_today"
+        sheet.write_blank(row_idx, col_idx, None, formats[key])
+
+
+def _render_parent_bar_day(sheet, row_idx, date_columns, s, formats,
+                           is_critical: bool, today: date) -> None:
+    for col_idx, d in date_columns:
+        is_today_col = (d == today)
+        if d < s.computed_start or d > s.effective_finish:
+            if is_today_col:
+                sheet.write_blank(row_idx, col_idx, None, formats["empty_today"])
+            continue
+        key = "parent_critical" if is_critical else "parent"
+        if is_today_col:
+            key += "_today"
+        sheet.write_blank(row_idx, col_idx, None, formats[key])
+
+
+# -------------------------------------------------------------------------
+# Week View
+
+def _build_week_view(workbook, project: Project, schedule, critical_path, formats,
+                     axis_start: date, axis_end: date) -> None:
     sheet = workbook.add_worksheet("Week View")
+    today = date.today()
+    today_week_start = today - timedelta(days=today.weekday())  # Monday of this week
+    critical_set = critical_path.critical_task_ids
 
-    for col, header in enumerate(_METADATA_COLS):
-        sheet.write(0, col, header, formats["header"])
+    # Metadata headers
+    for c, h in enumerate(_METADATA_COLS):
+        sheet.write(0, c, h, formats["header"])
 
-    week_columns = []
+    week_columns: list[tuple[int, date, date]] = []
     current = axis_start
     col = _METADATA_COL_COUNT
     while current <= axis_end:
-        sheet.write(0, col, current.isoformat(), formats["header"])
-        week_columns.append((col, current, current + timedelta(days=6)))
+        week_end = current + timedelta(days=6)
+        text = f"Week of\n{current.isoformat()}"
+        is_today_week = (current == today_week_start)
+        fmt = formats["header_today"] if is_today_week else formats["header"]
+        sheet.write(0, col, text, fmt)
+        week_columns.append((col, current, week_end))
         current += timedelta(days=7)
         col += 1
 
+    sheet.set_row(0, 35)
     _set_metadata_column_widths(sheet)
-    sheet.set_column(_METADATA_COL_COUNT, col - 1, 10)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     for row_idx, task in enumerate(project.tasks, start=1):
         _write_task_metadata_row(sheet, row_idx, task, formats)
-
         s = schedule.get(task.id)
         if not s:
             continue
 
-        for col_idx, week_start, week_end in week_columns:
-            overlap = not (s.computed_finish < week_start or s.computed_start > week_end)
-            if overlap:
-                cell_format = formats["completed"] if task.is_complete else formats["planned"]
-                sheet.write_blank(row_idx, col_idx, None, cell_format)
+        is_critical = task.id in critical_set
+        is_parent = project.has_subtasks(task.id)
+        is_complete = task.is_complete
 
+        if is_complete:
+            bar_end = s.effective_finish
+        elif today > s.effective_finish:
+            bar_end = today
+        else:
+            bar_end = s.effective_finish
+
+        for col_idx, ws, we in week_columns:
+            is_today_week = (ws == today_week_start)
+            overlap = not (bar_end < ws or s.computed_start > we)
+
+            if not overlap:
+                if is_today_week:
+                    sheet.write_blank(row_idx, col_idx, None, formats["empty_today"])
+                continue
+
+            if is_parent:
+                status = "parent"
+            elif is_complete:
+                status = "completed"
+            else:
+                # Pick the latest applicable status within the week
+                if ws > s.effective_finish:
+                    status = "overdue"
+                elif ws > s.computed_finish:
+                    status = "delayed"
+                else:
+                    status = "planned"
+
+            key = status
+            if is_critical and status != "overdue":
+                key += "_critical"
+            if is_today_week:
+                key += "_today"
+            sheet.write_blank(row_idx, col_idx, None, formats[key])
+
+
+# -------------------------------------------------------------------------
+# Schedule Calculations (tabular audit sheet)
 
 def _build_schedule_calculations(workbook, project, schedule, critical_path, formats) -> None:
     sheet = workbook.add_worksheet("Schedule Calculations")
 
     columns = [
         "TASK ID", "Name", "Hierarchy Level", "Parent ID", "Location", "Calendar Mode",
-        "Cycle Time", "Manual Start Date", "Baseline Start", "Baseline Finish",
+        "Cycle Time (Days)", "Manual Start Date", "Baseline Start", "Baseline Finish",
         "Computed Start", "Computed Finish",
         "Delay Days", "Effective Finish", "Actual Completion Date", "Is Complete",
         "Dependencies", "Total Float", "Is Critical", "Was On Critical Path",
@@ -259,6 +497,9 @@ def _build_schedule_calculations(workbook, project, schedule, critical_path, for
     sheet.set_column(1, 1, 28)
     sheet.set_column(2, len(columns) - 1, 14)
 
+
+# -------------------------------------------------------------------------
+# Critical Path Notes
 
 def _build_critical_path_notes(workbook, project, schedule, critical_path, formats) -> None:
     sheet = workbook.add_worksheet("Critical Path Notes")

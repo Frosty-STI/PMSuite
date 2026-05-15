@@ -4,13 +4,149 @@
     "name": "Small Demo Project",
     "timezone": "America/Chicago",
     "created_at": "2026-05-13T12:00:00-05:00",
-    "updated_at": "2026-05-14T22:38:58.402382-05:00",
+    "updated_at": "2026-05-14T22:51:30.472675-05:00",
     "last_export": null,
     "history": []
   },
   "settings": {
     "holidays": {
-      "USA": []
+      "USA": [
+        {
+          "date": "2026-01-01",
+          "name": "New Year's Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-01-19",
+          "name": "Martin Luther King Jr. Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-02-16",
+          "name": "Washington's Birthday",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-05-25",
+          "name": "Memorial Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-06-19",
+          "name": "Juneteenth National Independence Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-07-03",
+          "name": "Independence Day (observed)",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-07-04",
+          "name": "Independence Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-09-07",
+          "name": "Labor Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-10-12",
+          "name": "Columbus Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-11-11",
+          "name": "Veterans Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-11-26",
+          "name": "Thanksgiving Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2026-12-25",
+          "name": "Christmas Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-01-01",
+          "name": "New Year's Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-01-18",
+          "name": "Martin Luther King Jr. Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-02-15",
+          "name": "Washington's Birthday",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-05-31",
+          "name": "Memorial Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-06-18",
+          "name": "Juneteenth National Independence Day (observed)",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-06-19",
+          "name": "Juneteenth National Independence Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-07-04",
+          "name": "Independence Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-07-05",
+          "name": "Independence Day (observed)",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-09-06",
+          "name": "Labor Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-10-11",
+          "name": "Columbus Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-11-11",
+          "name": "Veterans Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-11-25",
+          "name": "Thanksgiving Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-12-24",
+          "name": "Christmas Day (observed)",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-12-25",
+          "name": "Christmas Day",
+          "source": "seeded"
+        },
+        {
+          "date": "2027-12-31",
+          "name": "New Year's Day (observed)",
+          "source": "seeded"
+        }
+      ]
     },
     "work_weeks": {
       "USA": [
