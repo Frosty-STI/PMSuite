@@ -25,6 +25,13 @@ from .delays import (
     preview_auto_catchup as _preview_auto_catchup,
     undo_delay_batch as _undo_delay_batch,
 )
+from .editing import (
+    add_dependency as _add_dependency,
+    add_task as _add_task,
+    delete_task as _delete_task,
+    remove_dependency as _remove_dependency,
+    update_task as _update_task,
+)
 from .excel_builder import build_excel as _build_excel
 from .logging_config import get_logger
 from .models import LastExport, Project
@@ -138,3 +145,31 @@ def set_project_baseline(project: Project, overwrite: bool = False):
     overwrite=True. Returns a BaselineResult.
     """
     return _set_baseline(project, overwrite=overwrite)
+
+
+# -- Editing ---------------------------------------------------------------
+
+def add_task(project: Project, **kwargs):
+    """Append a task with the next generated TASK-NNN ID."""
+    return _add_task(project, **kwargs)
+
+
+def update_task(project: Project, task_id: str, **kwargs):
+    """Update one task's editable fields."""
+    return _update_task(project, task_id, **kwargs)
+
+
+def delete_task(project: Project, task_id: str) -> None:
+    """Delete a task if nothing still depends on it and it has no children."""
+    _delete_task(project, task_id)
+
+
+def add_dependency(project: Project, task_id: str, dep_id: str,
+                   type: str = "FS", lag_days: int = 0) -> None:
+    """Add or update one predecessor dependency on a task."""
+    _add_dependency(project, task_id, dep_id, type=type, lag_days=lag_days)
+
+
+def remove_dependency(project: Project, task_id: str, dep_id: str) -> None:
+    """Remove one predecessor dependency from a task."""
+    _remove_dependency(project, task_id, dep_id)

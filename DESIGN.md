@@ -372,6 +372,7 @@ tests/test_critical_path.py     # CPM float, long-pole critical set, parent inhe
 tests/test_locations.py         # (TODO) work-week + holiday per location
 tests/test_holidays.py          # (TODO) editor logic, re-seed diff
 tests/test_excel_builder.py     # structural formatting assertions
+tests/test_editing.py           # Step 6 add/update/delete/dependency API primitives
 tests/test_excel_visual.py      # (TODO, opt-in) visual rendering
 tests/test_performance.py       # (TODO, slow) 300 / 1000 / 2000 tasks
 ```

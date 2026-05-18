@@ -20,7 +20,7 @@ Latest commits (most recent first):
 | `b7c357d` | doc  | Initial comprehensive documentation (HANDOFF, MASTERECAP, etc.) |
 | `10a294d` | 0    | Walking-skeleton scaffold |
 
-**84/84 tests passing** (`pytest -q` ~0.6 sec). The end-to-end pipeline plus delay/completion/baseline/dependency/critical-path/validation/Excel structural workflows are functional.
+**95/95 tests passing** (`pytest -q` ~0.7 sec). The end-to-end pipeline plus editing/delay/completion/baseline/dependency/critical-path/validation/Excel structural workflows are functional.
 
 ## What works today
 
@@ -69,6 +69,7 @@ gantt_builder/
 ├── critical_path.py   — backward pass implemented; SS/FF/SF in CPM math
 ├── delays.py          — NEW. preview_auto_catchup, apply_*, undo, is_pending
 ├── errors.py          — added TaskNotFoundError, CompletedTaskCannotBeDelayedError
+├── editing.py         — Step 6 API primitives: add/update/delete tasks and dependency edits
 ├── excel_builder.py   — full Option E rendering
 ├── models.py          — Task gained baseline_start, baseline_finish;
 │                         Project gained all_descendant_ids / _leaf_ids helpers
@@ -93,7 +94,7 @@ examples/
                          DAL / MLA / TAI / FR-BIP / AIZU
 ```
 
-84 tests total. All passing.
+95 tests total. All passing.
 
 ## Latest demo workbooks (locally; gitignored)
 
@@ -156,7 +157,7 @@ The current `ui/streamlit_app.py` is read-only: dropdown + display + Validate / 
 - Smoke test that the Streamlit script imports cleanly and `main()` runs without errors when given a fresh `st.session_state`.
 
 **Implementation order suggestion:**
-1. Add `add_task` / `update_task` / `delete_task` / `add_dependency` / `remove_dependency` to the API (these are needed by the UI but also useful standalone).
+1. ~~Add `add_task` / `update_task` / `delete_task` / `add_dependency` / `remove_dependency` to the API~~ — landed in Step 6 start.
 2. Refactor Streamlit to use `st.session_state` for the project.
 3. Replace `st.dataframe` with `st.data_editor`.
 4. Wire add/delete buttons.
@@ -203,7 +204,7 @@ C:\Users\Frosty\PMsuite\          # local clone; pushed to https://github.com/Fr
 │   ├── scheduler.py
 │   └── validation.py
 ├── ui/streamlit_app.py
-├── tests/                        # 11 test files, 84 tests passing
+├── tests/                        # 12 test files, 95 tests passing
 ├── examples/                     # both demos have real holidays + baseline
 ├── output/                       # gitignored generated Excel files
 └── .logs/gantt_builder.log

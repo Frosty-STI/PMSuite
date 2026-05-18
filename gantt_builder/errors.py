@@ -111,3 +111,7 @@ class TaskNotFoundError(GanttError):
 
 class CompletedTaskCannotBeDelayedError(GanttError):
     error_code = "COMPLETED_TASK_CANNOT_BE_DELAYED"
+
+
+class TaskDeletionBlockedError(GanttError):
+    error_code = "TASK_DELETION_BLOCKED"

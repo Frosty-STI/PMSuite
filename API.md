@@ -215,7 +215,10 @@ GanttError                          (base; error_code = "GANTT_ERROR")
 ├── InvalidLocationError            ("INVALID_LOCATION")
 ├── MissingHolidayDataError         ("MISSING_HOLIDAY_DATA")
 ├── InvalidDelayDaysError           ("INVALID_DELAY_DAYS")
-└── ParentHasCycleTimeError         ("PARENT_HAS_CYCLE_TIME")
+├── ParentHasCycleTimeError         ("PARENT_HAS_CYCLE_TIME")
+├── TaskNotFoundError               ("TASK_NOT_FOUND")
+├── CompletedTaskCannotBeDelayedError ("COMPLETED_TASK_CANNOT_BE_DELAYED")
+└── TaskDeletionBlockedError        ("TASK_DELETION_BLOCKED")
 ```
 
 Every subclass carries:
@@ -305,16 +308,31 @@ Snapshots current `computed_start` / `computed_finish` into each task's `baselin
 
 The baseline is the user-committed plan reference — it does NOT move when delays or completion shift the live schedule. Used by Excel rendering to display "Baseline Start" / "Baseline Finish" alongside "Computed Start" / "Computed Finish" in both the frozen pane of Day View / Week View and the Schedule Calculations audit sheet.
 
-## What's NOT in the public API yet (planned for Step 6)
+## Editing
 
-These will be added when the Streamlit editing surface needs them:
+### `add_task(project, **kwargs) -> Task`
 
-- `add_task(project, **kwargs) -> Task` — sequential ID assignment via `next_task_id`, validation, defaults.
-- `update_task(project, task_id, **kwargs) -> Task`.
-- `delete_task(project, task_id) -> None` — must reject if other tasks depend on it.
-- `add_dependency(project, task_id, dep_id, type="FS", lag_days=0) -> None`.
-- `remove_dependency(project, task_id, dep_id) -> None`.
+Appends a new task with the next available generated `TASK-NNN` ID. If `settings.next_task_id` is stale, existing IDs are skipped and the counter is advanced to the next unused value. Task IDs cannot be supplied by callers.
+
+### `update_task(project, task_id, **kwargs) -> Task`
+
+Updates one task after validating the resulting `Task` model. Task IDs are stable and cannot be renamed.
+
+### `delete_task(project, task_id) -> None`
+
+Deletes a task only when no other task depends on it and it has no child tasks. Raises `TaskDeletionBlockedError` with affected task IDs when deletion would break dependencies or hierarchy.
+
+### `add_dependency(project, task_id, dep_id, type="FS", lag_days=0) -> None`
+
+Adds or updates a predecessor dependency. Rejects unknown tasks, self-dependencies, and dependencies that conflict with the parent hierarchy.
+
+### `remove_dependency(project, task_id, dep_id) -> None`
+
+Removes a predecessor dependency from a task. No-op when the edge is already absent.
+
+## What's NOT in the public API yet (planned for later Step 6/7 work)
+
 - `reseed_holidays(project, location) -> HolidayDiff` — Q20 re-seed-with-diff (currently `seed_holidays()` in `locations.py` returns the raw library output; the diff wrapper is the Streamlit-side need).
 - `update_holidays(project, location, holidays) -> None`.
 
-Until then, callers may mutate the `Project` pydantic model directly — the model is the source of truth. Direct mutations should be followed by `save_project()` to persist and `validate_project()` to verify.
+Direct model mutations should be followed by `save_project()` to persist and `validate_project()` to verify.
