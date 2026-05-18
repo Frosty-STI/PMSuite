@@ -9,7 +9,6 @@ errors to the structured envelope via `.to_envelope()` for UI display.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 from .baseline import set_project_baseline as _set_baseline
@@ -31,6 +30,7 @@ from .logging_config import get_logger
 from .models import LastExport, Project
 from .project_io import load_project as _load, save_project as _save
 from .scheduler import run_schedule
+from .time_utils import project_now
 from .validation import validate_project as _validate
 
 _log = get_logger(__name__)
@@ -73,7 +73,7 @@ def build_excel(project: Project, output_dir: str | Path | None = None) -> Path:
 
     project.project.last_export = LastExport(
         path=str(output_path),
-        at=datetime.now().astimezone(),
+        at=project_now(project),
     )
     return output_path
 

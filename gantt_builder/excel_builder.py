@@ -28,7 +28,7 @@ Baseline Start, Baseline Finish.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import xlsxwriter
@@ -38,6 +38,7 @@ from .locations import weekday_code
 from .logging_config import get_logger
 from .models import Project
 from .scheduler import ScheduledTask
+from .time_utils import project_now
 
 _log = get_logger(__name__)
 
@@ -74,7 +75,7 @@ def build_excel(
     output_dir = Path(output_dir) if output_dir else Path(project.settings.output_directory)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = project_now(project).strftime("%Y-%m-%d_%H%M%S")
     filename = f"gantt_{project.project.id}_{timestamp}.xlsx"
     path = output_dir / filename
 
@@ -103,12 +104,12 @@ def build_excel(
 # Format precomputation
 
 # Color palette (DESIGN.md §14.4 / Q26a, with iteration after checkpoint 2)
-_C_PLANNED   = "#8FB6E1"   # paler than original #4A90D9 for better contrast with critical border
+_C_PLANNED   = "#8FB6E1"   # pale blue for critical-border contrast
 _C_COMPLETED = "#2E8B57"
 _C_DELAYED   = "#E68A00"
 _C_OVERDUE   = "#D9534F"
 _C_WEEKEND   = "#F0F0F0"
-_C_HOLIDAY   = "#B0B0B0"   # darker than original #E0E0E0 — more visible against white
+_C_HOLIDAY   = "#B0B0B0"   # visible holiday gray in Excel viewers
 _C_TODAY     = "#FFF8C4"
 _C_PARENT    = "#555555"
 _C_CRITICAL_BORDER = "#8B0000"
@@ -343,10 +344,17 @@ def _render_leaf_bar_day(sheet, row_idx, date_columns, s, task, project,
             continue
 
         # Inside bar range
-        is_non_working = (task.calendar_mode == "working_days"
-                          and (weekday_code(d) not in work_week or d in holidays))
-        if is_non_working:
-            key = "weekend_gap_today" if is_today_col else "weekend_gap"
+        is_holiday_gap = task.calendar_mode == "working_days" and d in holidays
+        is_weekend_gap = (
+            task.calendar_mode == "working_days"
+            and not is_holiday_gap
+            and weekday_code(d) not in work_week
+        )
+        if is_holiday_gap or is_weekend_gap:
+            if is_holiday_gap:
+                key = "holiday_gap_today" if is_today_col else "holiday_gap"
+            else:
+                key = "weekend_gap_today" if is_today_col else "weekend_gap"
             sheet.write_blank(row_idx, col_idx, None, formats[key])
             continue
 

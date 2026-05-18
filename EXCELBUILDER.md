@@ -34,10 +34,11 @@ Generated files accumulate in `output/`. Users prune manually.
 
 The regenerate-from-JSON model means we never need to modify an existing workbook, so `xlsxwriter`'s read-only limitation costs us nothing while we gain superior outline grouping, conditional formatting, and large-file write speed.
 
-## Workbook structure — 4 sheets
+## Workbook structure — 5 sheets
 
 | Sheet                    | Granularity  | Purpose                                    |
 |--------------------------|--------------|--------------------------------------------|
+| **Chart Key & Info**     | Reference    | Legend, working weeks, frozen-pane guide   |
 | **Day View**             | 1 column / day | Detailed scrollable Gantt                |
 | **Week View**            | 1 column / week | Compressed overview, same date span      |
 | **Schedule Calculations** | tabular     | Auditable per-task computed values         |
@@ -59,10 +60,10 @@ Day View has one column per day across this span; Week View has one column per M
 ## Frozen panes
 
 Both Day View and Week View freeze:
-- The task metadata columns on the left (TASK ID, Name, Location).
+- The task metadata columns on the left (TASK ID, Name, Location, Cycle Time (Days), Baseline Start, Baseline Finish, Dependencies).
 - The date header row at the top.
 
-`worksheet.freeze_panes(1, N)` where `N` = number of metadata columns (currently 3, may grow to include Calendar Mode and other quick-reference fields).
+`worksheet.freeze_panes(1, N)` where `N` = number of metadata columns (currently 7).
 
 ## Bar rendering (Option E — segmented static cell coloring)
 
@@ -70,14 +71,14 @@ Each task row has cells colored per its date range and status:
 
 | Segment                                                          | Color (hex)    | When applied |
 |------------------------------------------------------------------|----------------|--------------|
-| **Planned** (incomplete, between computed_start and computed_finish) | `#4A90D9` (muted blue) | Default state for in-progress / upcoming work |
+| **Planned** (incomplete, between computed_start and computed_finish) | `#8FB6E1` (pale blue) | Default state for in-progress / upcoming work |
 | **Completed** (full bar) — when `is_complete: true`               | `#2E8B57` (green) | After completion |
 | **Delay extension** (computed_finish → effective_finish)          | `#E68A00` (orange) | When `delay_days > 0` |
 | **Overdue** (today > effective_finish, incomplete)                | `#D9534F` (red) outline or fill | Live state |
 | **Critical path indicator**                                      | `#8B0000` (dark red) border or left stripe | Tasks where `total_float == 0` |
 | **Today column** (all rows)                                       | `#FFF8C4` (pale yellow) shade | Always |
 | **Weekend column** (Day View only, all rows)                      | `#F0F0F0` (light gray) shade | Saturdays + Sundays |
-| **Holiday column** (Day View only, per-row by location)           | `#E0E0E0` (darker gray) + name in header | Where task's location has a holiday on that date |
+| **Holiday column** (Day View only, per-row by location)           | `#B0B0B0` (darker gray) + name in header | Where task's location has a holiday on that date |
 | **Parent summary bar**                                            | `#555555` (dark gray) with black border caps | Rolled-up parent rows |
 
 **No text on bars.** Task ID + Name live in the frozen leftmost columns where they have room. Bars are pure color encoding.
@@ -148,7 +149,7 @@ The audit table. Every task is one row. Columns are in this exact order, left to
 | 12 | Actual Completion Date  | `task.actual_completion_date`         | ISO date or empty |
 | 13 | Is Complete             | `task.is_complete`                    | TRUE/FALSE |
 | 14 | Dependencies            | derived string                        | Format: `TASK-001[FS, lag 0]; TASK-002[SS, lag 2]` |
-| 15 | Total Float             | `critical_path.total_float[task.id]`  | Currently always 0 (stub) |
+| 15 | Total Float             | `critical_path.total_float[task.id]`  | CPM backward-pass diagnostic |
 | 16 | Is Critical             | `task.id in critical_path.critical_task_ids` | TRUE/FALSE |
 | 17 | Was On Critical Path    | `project.history[task_id].was_on_critical_path` | TRUE/FALSE, snapshot at completion |
 | 18 | Downstream Impact       | count of tasks depending on this one | int |
@@ -187,9 +188,9 @@ This makes "this task runs continuously vs. only on business days" immediately v
 
 ## Per-task holiday shading
 
-Holidays are per-location. A USA Thanksgiving holiday gray-shades the column only for tasks whose `completion_location == "USA"` — an MLA task running on USA Thanksgiving is fine. Implementation iterates the holiday list per row's location when rendering cells.
+Holidays are per-location. A DAL Thanksgiving holiday gray-shades the column only for tasks whose `completion_location == "DAL"` — an MLA task running on DAL Thanksgiving is fine. Implementation iterates the holiday list per row's location when rendering cells.
 
-Column header for a holiday day labels the date AND the holiday name (e.g., `Thu\n2026-11-26\nThanksgiving (USA)`). When multiple locations share a holiday on the same date, the header lists all of them: `(USA, FR-BIP, AIZU)`.
+Column header for a holiday day labels the date AND the holiday name (e.g., `Thu\n2026-11-26\nThanksgiving (DAL)`). When multiple locations share a holiday on the same date, the header lists all of them: `(DAL, FR-BIP, AIZU)`.
 
 ## Performance budget
 
@@ -199,21 +200,21 @@ Cold-start budget at 50–300 tasks: **< 6 seconds total** (load → validate �
 
 At 2000+ tasks (no hard cap), performance degrades gracefully — Day View writes scale linearly with task count × axis-day count.
 
-## Current implementation status (commit `c824203`)
+## Current implementation status (commit `309c66b` plus pre-Step-6 hardening)
 
 **Full Option E rendering is shipped.** The workbook delivers:
 
-- 4 sheets (Day View, Week View, Schedule Calculations, Critical Path Notes).
+- 5 sheets (Chart Key & Info, Day View, Week View, Schedule Calculations, Critical Path Notes).
 - Frozen-pane metadata columns: TASK ID, Name, Location, **Cycle Time (Days)**, **Baseline Start**, **Baseline Finish**.
 - Segmented bar colors per task row:
-  - Planned (incomplete): muted blue (`#4A90D9`).
+  - Planned (incomplete): pale blue (`#8FB6E1`).
   - Completed (full bar): green (`#2E8B57`).
   - Delay extension (`computed_finish < d ≤ effective_finish`): orange (`#E68A00`).
   - Overdue tail (`d > effective_finish` and not complete, up to today): red (`#D9534F`).
 - Critical path indicator: thick dark-red (`#8B0000`) top + bottom border applied on top of the status fill for any task in `critical_task_ids`. Parent tasks inherit critical-border styling when any descendant is critical.
 - Today vertical line: thick black left border on every body cell in today's column, plus a yellow column header. Empty cells in today's column receive a light-yellow fill so the line stays visible across all rows.
-- Multi-line date column headers: weekday, ISO date, and holiday name(s) per location. Multi-location holidays list every observer, e.g., `Wed\n2025-12-25\nChristmas Day (AIZU, FR-BIP, USA)`.
-- Column header shading: USA Saturday/Sunday → light gray; any-location holiday → darker gray; today → yellow (overrides).
+- Multi-line date column headers: weekday, ISO date, and holiday name(s) per location. Multi-location holidays list every observer, e.g., `Fri\n2026-12-25\nChristmas Day (AIZU, DAL, FR-BIP)`.
+- Column header shading: Saturday/Sunday → light gray; any-location holiday → darker gray; today → yellow (overrides).
 - Per-row weekend / holiday "gap" shading: a `working_days` task on its location's non-working day shows a light-gray gap inside the bar range; `e_days` tasks (oven cycles) render continuous through weekends and holidays per the design.
 - Parent summary rows: dark-gray (`#555555`) bar across `[computed_start, effective_finish]` with critical inheritance.
 

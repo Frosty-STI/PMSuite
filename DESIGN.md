@@ -90,7 +90,7 @@ V1 closed enum, 8 locations:
 
 | Code   | Place                       | Work-week (USA-perspective) | Holiday seed (Python `holidays`) |
 |--------|-----------------------------|-----------------------------|----------------------------------|
-| USA    | USA                         | Mon–Fri                     | `holidays.US()`                  |
+| DAL    | Dallas, USA                 | Mon–Fri                     | `holidays.US()`                  |
 | FR-BIP | Freising, Germany           | Mon–Fri                     | `holidays.Germany(subdiv="BY")`  |
 | MLA    | Kuala Lumpur, Malaysia      | Sun–Thu                     | `holidays.Malaysia(subdiv="KUL")`|
 | TIEMA  | Melaka, Malaysia            | Sun–Thu                     | `holidays.Malaysia(subdiv="MLK")`|
@@ -108,7 +108,7 @@ This produces clean scheduling alignment for global handoffs: the USA team sees 
 ### Holiday model
 
 - **Object form** in JSON: `[{date, name, source: "seeded"|"user-added"|"user-edited"}]`.
-- **Partitioned by location**: `settings.holidays.USA`, `settings.holidays.MLA`, etc.
+- **Partitioned by location**: `settings.holidays.DAL`, `settings.holidays.MLA`, etc.
 - **Local-date storage** (no USA-perspective shift on dates). The 1-day timezone slop is smaller than the system's day-resolution granularity.
 - **Seeded from `holidays` library** at project creation / first encounter of a location. After seeding, JSON is canonical; library is never consulted again unless the user clicks "Re-seed from library" (which surfaces a diff before applying).
 - E-day tasks honor location holidays (ovens may run continuously but sites observe national holidays).
@@ -160,7 +160,7 @@ Bare-string shorthand:
 
 The Streamlit UI must include a **"Dependency Explanation" expander** explaining FS/SS/FF/SF in plain language.
 
-**Walking-skeleton status:** FS is fully implemented; SS/FF/SF currently fall back to FS semantics. To be filled in incrementally.
+FS / SS / FF / SF are implemented. `lag_days` is counted in the predecessor's calendar mode; after lag is applied, the successor resolves in its own calendar mode.
 
 ## 9. Parent / subtask hierarchy
 
@@ -202,7 +202,8 @@ Once `is_complete: true`, `delay_days` is preserved historically but no longer a
 
 ## 12. Critical path
 
-- **CPM-style:** critical = `total_float == 0`.
+- **Total float:** computed with a CPM-style backward pass.
+- **Displayed critical path:** the user-visible red-bar critical set is the long pole: terminal unfinished leaves and the transitive chain of gating predecessors that drive the project end. This avoids working-day boundary snapping making the obvious gating chain appear non-critical due to small artificial float.
 - Project end derived from latest leaf `effective_finish`. No user-specified target end date.
 - **Total float only** in v1; free float skipped.
 - Forward + backward pass per CPM standard. Lag included in path duration.
@@ -210,7 +211,7 @@ Once `is_complete: true`, `delay_days` is preserved historically but no longer a
 - Completed tasks excluded from live critical path. `was_on_critical_path` is snapshotted into `project.history` at completion time for the audit column on Schedule Calculations.
 - All tied critical paths are marked.
 
-**Walking-skeleton status:** stub returns project end + empty critical set; backward pass to be implemented per this design.
+Current implementation computes total float for diagnostics and uses the long-pole critical set for Excel critical-path highlighting.
 
 ## 13. Validation
 
@@ -242,23 +243,24 @@ output/gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx
 
 ### 14.3 Workbook sheets
 
-1. **Day View** — one column per day across full axis (scrollable).
-2. **Week View** — one column per week across same axis.
-3. **Schedule Calculations** — full audit table.
-4. **Critical Path Notes** — summary + dashboards.
+1. **Chart Key & Info** — legend, working-week reference, and frozen-pane guide.
+2. **Day View** — one column per day across full axis (scrollable).
+3. **Week View** — one column per week across same axis.
+4. **Schedule Calculations** — full audit table.
+5. **Critical Path Notes** — summary + dashboards.
 
 Frozen panes: task metadata columns frozen left, date header row frozen top. The full date range is rendered (no compression); user scrolls horizontally.
 
 ### 14.4 Bar rendering (Option E — segmented cell coloring)
 
-- **Planned** (incomplete): muted blue (`#4A90D9`).
+- **Planned** (incomplete): pale blue (`#8FB6E1`).
 - **Completed**: green (`#2E8B57`).
 - **Delay extension**: orange (`#E68A00`).
 - **Overdue**: red (`#D9534F`) fill or outline.
 - **Critical path indicator**: dark red border / left stripe (`#8B0000`).
 - **Today column**: pale yellow (`#FFF8C4`).
 - **Weekend**: light gray (`#F0F0F0`).
-- **Holiday**: slightly darker gray (`#E0E0E0`), holiday name in column header.
+- **Holiday**: darker gray (`#B0B0B0`), holiday name in column header.
 - **Parent summary bar**: dark gray with black border caps (`#555555`).
 
 No text on bars (would conflict with short bars at day resolution). Task ID + name live in the frozen leftmost columns.
@@ -325,7 +327,7 @@ PMsuite/
 ├── ui/streamlit_app.py              # local-only Streamlit UI
 ├── tests/
 ├── examples/
-│   ├── small_demo.json              # 7 tasks, USA only — dual-purpose example + fixture
+│   ├── small_demo.json              # 7 tasks, DAL only — dual-purpose example + fixture
 │   └── npde_demo.json               # multi-location demo (starter; will grow)
 ├── projects/                        # GITIGNORED — your project JSONs (per-user)
 │   └── .backups/                    # rotating snapshots
@@ -355,17 +357,17 @@ Test files cover behavior contracts (not internal implementation details):
 
 ```
 tests/test_models.py            # pydantic validation, dependency shorthand
-tests/test_project_io.py        # load/save round-trip, atomic write, malformed JSON
+tests/test_project_io.py        # load/save round-trip, canonical writes, timezone audit fields
 tests/test_api.py               # end-to-end pipeline (load → validate → schedule → build)
-tests/test_validation.py        # (TODO) every validation rule
+tests/test_validation.py        # parent-cycle and parent/dependency safety
 tests/test_scheduler.py         # (TODO) calendar math, FS/SS/FF/SF
-tests/test_delays.py            # (TODO) cumulative delay, catch-up, max-cascade
-tests/test_completion.py        # (TODO) freeze, parent cascade, unset
-tests/test_dependencies.py      # (TODO) lag, type semantics
-tests/test_critical_path.py     # (TODO) CPM, float
+tests/test_delays.py            # cumulative delay, catch-up, max-cascade, undo
+tests/test_completion.py        # freeze, parent cascade, unset, undo
+tests/test_dependencies.py      # lag, FS/SS/FF/SF, parent-aware scheduling
+tests/test_critical_path.py     # CPM float, long-pole critical set, parent inheritance
 tests/test_locations.py         # (TODO) work-week + holiday per location
 tests/test_holidays.py          # (TODO) editor logic, re-seed diff
-tests/test_excel_builder.py     # (TODO) sheet structure, formatting
+tests/test_excel_builder.py     # structural formatting assertions
 tests/test_excel_visual.py      # (TODO, opt-in) visual rendering
 tests/test_performance.py       # (TODO, slow) 300 / 1000 / 2000 tasks
 ```
@@ -384,27 +386,23 @@ No task ceiling. 2000-task projects work; they just take longer. Optimization ta
 
 Always on. Rotating file handler at `.logs/gantt_builder.log` (10 MB, last 5 retained) + stderr stream. Default level `INFO`. Setup is idempotent via `logging_config.configure_logging()`; modules use `get_logger(__name__)`.
 
-## 21. Walking-skeleton — what works today
+## 21. Current Step 5 state — what works today
 
 - Load / validate / save JSON project files.
-- Forward-pass scheduling with FS dependencies, manual-start floors, e-day + working-day calendar math, holiday awareness, parent rollup.
+- Forward-pass scheduling with FS / SS / FF / SF dependencies, predecessor-calendar lag, manual-start floors, parent-inherited floors/dependencies, e-day + working-day calendar math, holiday awareness, and parent rollup.
 - Atomic JSON writes with optional rotating snapshots.
-- Excel workbook generation with all 4 sheets, basic Gantt cell coloring, frozen panes.
+- Excel workbook generation with all 5 sheets, full Option E Gantt cell coloring, frozen panes, baseline columns, dependency column, today line, holiday/weekend gaps, parent summary bars, and chart key.
 - Streamlit shell: pick project, view tasks, validate, save, build Excel.
 - `pytest -q` covers model validation, JSON I/O round-tripping, end-to-end pipeline.
 
-## 22. Walking-skeleton — what's stubbed / not yet implemented
+## 22. What's still pending after Step 5
 
-- SS / FF / SF dependency types (currently fall back to FS semantics).
-- Backward pass for CPM (critical path is currently empty).
-- Delay propagation engine + auto-catchup on load.
 - Streamlit task editing (add / edit / delete / dependency picker / holiday editor).
 - Dirty-state badge + browser `beforeunload` warning.
-- Parent task completion cascade.
 - New Project button workflow.
 - Holiday seeding UI and re-seed diff.
-- Full Excel rendering (Option E segmented colors, today line, weekend / holiday shading per row's location).
-- Test coverage for validation rules, scheduler edge cases, delays, completion, locations, critical path, performance.
+- Expanded NPDE demo with 30-50 public-domain tasks.
+- Broader test backfill for locations, holiday editor logic, visual Excel snapshots, and performance.
 
 ## Decision log
 

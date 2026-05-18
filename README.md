@@ -46,7 +46,7 @@ JSON project file  →  Python loader/validator
                   →  Generated workbook with Day View, Week View, Schedule Calculations, Critical Path Notes
 ```
 
-The scheduler resolves per-task calendar modes (working days vs e-days), per-task completion locations (USA, MLA, CLARK, TAI, TIPI, TIEMA, FR-BIP, AIZU), holiday partitioning, parent/subtask rollups, and rich finish-to-start / start-to-start / finish-to-finish / start-to-finish dependencies with lag.
+The scheduler resolves per-task calendar modes (working days vs e-days), per-task completion locations (DAL, MLA, CLARK, TAI, TIPI, TIEMA, FR-BIP, AIZU), holiday partitioning, parent/subtask rollups, parent-aware scheduling floors, and rich finish-to-start / start-to-start / finish-to-finish / start-to-finish dependencies with predecessor-calendar lag.
 
 ## Your data is local
 
@@ -84,4 +84,4 @@ See [DESIGN.md](DESIGN.md) for the design decisions behind the current architect
 
 ## License
 
-To be determined.
+MIT.

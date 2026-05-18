@@ -56,13 +56,14 @@ def _eday_task(task_id: str, name: str, cycle: int, manual_start: date | None = 
     )
 
 
-def _parent_task(task_id: str, name: str) -> Task:
+def _parent_task(task_id: str, name: str, deps: list[str] | None = None) -> Task:
     return Task(
         id=task_id,
         name=name,
         completion_location="DAL",
         calendar_mode="e_days",
         cycle_time_days=None,
+        dependencies=[Dependency(id=d) for d in (deps or [])],
     )
 
 
@@ -144,6 +145,23 @@ def test_parent_inherits_critical_from_descendant():
     # The parent should be marked critical because its child is critical
     assert "TASK-003" in result.critical_task_ids  # the actual critical child
     assert "TASK-002" in result.critical_task_ids  # parent inherits
+
+
+def test_long_pole_includes_dependency_inherited_from_parent():
+    """A parent-level dependency should still mark the gating predecessor critical."""
+    project = _make_project([
+        _eday_task("TASK-001", "Pre", cycle=2, manual_start=date(2026, 5, 18)),
+        _parent_task("TASK-002", "Parent", deps=["TASK-001"]),
+        _eday_task("TASK-003", "Child", cycle=1, manual_start=date(2026, 5, 18),
+                   parent_id="TASK-002"),
+    ])
+    schedule = run_schedule(project)
+    result = compute_critical_path(project, schedule)
+
+    assert schedule["TASK-003"].computed_start == date(2026, 5, 20)
+    assert "TASK-001" in result.critical_task_ids
+    assert "TASK-002" in result.critical_task_ids
+    assert "TASK-003" in result.critical_task_ids
 
 
 def test_project_end_matches_latest_effective_finish():

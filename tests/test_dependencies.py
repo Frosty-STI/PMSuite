@@ -42,13 +42,28 @@ def _project(tasks: list[Task]) -> Project:
 
 def _t(task_id: str, cycle: int, manual_start: date | None = None,
        deps: list[Dependency] | None = None,
-       calendar_mode: str = "e_days") -> Task:
+       calendar_mode: str = "e_days",
+       parent_id: str | None = None) -> Task:
     return Task(
         id=task_id,
         name=task_id,
         completion_location="DAL",
         calendar_mode=calendar_mode,
         cycle_time_days=cycle,
+        manual_start_date=manual_start,
+        dependencies=deps or [],
+        parent_id=parent_id,
+    )
+
+
+def _parent(task_id: str, manual_start: date | None = None,
+            deps: list[Dependency] | None = None) -> Task:
+    return Task(
+        id=task_id,
+        name=task_id,
+        completion_location="DAL",
+        calendar_mode="e_days",
+        cycle_time_days=None,
         manual_start_date=manual_start,
         dependencies=deps or [],
     )
@@ -212,3 +227,54 @@ def test_task_with_mixed_dependency_types_takes_max_floor():
     ])
     schedule = run_schedule(project)
     assert schedule["TASK-003"].computed_start == date(2026, 5, 21)
+
+
+# -- Parent-aware scheduling ----------------------------------------------
+
+def test_parent_manual_start_is_inherited_by_descendant_leaf():
+    project = _project([
+        _parent("TASK-001", manual_start=date(2026, 5, 20)),
+        _t("TASK-002", cycle=1, manual_start=date(2026, 5, 18), parent_id="TASK-001"),
+    ])
+    schedule = run_schedule(project)
+
+    assert schedule["TASK-002"].computed_start == date(2026, 5, 20)
+    assert schedule["TASK-001"].computed_start == date(2026, 5, 20)
+
+
+def test_parent_dependency_is_inherited_by_descendant_leaf():
+    project = _project([
+        _t("TASK-001", cycle=2, manual_start=date(2026, 5, 18)),
+        _parent("TASK-002", deps=[Dependency(id="TASK-001", type="FS", lag_days=0)]),
+        _t("TASK-003", cycle=1, manual_start=date(2026, 5, 18), parent_id="TASK-002"),
+    ])
+    schedule = run_schedule(project)
+
+    # TASK-001 finishes 5/19, so the parent gate pushes its child to 5/20.
+    assert schedule["TASK-003"].computed_start == date(2026, 5, 20)
+    assert schedule["TASK-002"].computed_start == date(2026, 5, 20)
+
+
+def test_leaf_dependency_on_parent_uses_parent_rollup_finish():
+    project = _project([
+        _parent("TASK-001"),
+        _t("TASK-002", cycle=2, manual_start=date(2026, 5, 18), parent_id="TASK-001"),
+        _t("TASK-003", cycle=4, manual_start=date(2026, 5, 18), parent_id="TASK-001"),
+        _t("TASK-004", cycle=1, deps=[Dependency(id="TASK-001", type="FS", lag_days=0)]),
+    ])
+    schedule = run_schedule(project)
+
+    assert schedule["TASK-001"].effective_finish == date(2026, 5, 21)
+    assert schedule["TASK-004"].computed_start == date(2026, 5, 22)
+
+
+def test_positive_lag_counts_in_predecessor_calendar():
+    project = _project([
+        _t("TASK-001", cycle=1, manual_start=date(2026, 5, 20), calendar_mode="working_days"),
+        _t("TASK-002", cycle=1, deps=[Dependency(id="TASK-001", type="FS", lag_days=3)]),
+    ])
+    schedule = run_schedule(project)
+
+    # TASK-001 finishes Wed 5/20. FS zero-lag anchor is Thu 5/21.
+    # Three predecessor working days after that are Fri 5/22, Mon 5/25, Tue 5/26.
+    assert schedule["TASK-002"].computed_start == date(2026, 5, 26)

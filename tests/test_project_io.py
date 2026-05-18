@@ -51,3 +51,23 @@ def test_save_writes_canonical_with_defaults(small_project, tmp_path: Path):
         for field in ("id", "name", "completion_location", "calendar_mode",
                       "dependencies", "is_complete", "delay_days"):
             assert field in task
+
+
+def test_save_uses_project_timezone_for_updated_at(small_project, tmp_path: Path):
+    out_path = tmp_path / "timezone.json"
+    small_project.project.timezone = "Asia/Tokyo"
+    small_project.settings.keep_local_snapshots = 0
+
+    api.save_project(small_project, out_path)
+
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert data["project"]["updated_at"].endswith("+09:00")
+
+
+def test_build_excel_sets_last_export_in_project_timezone(small_project, tmp_path: Path):
+    small_project.project.timezone = "Asia/Tokyo"
+
+    api.build_excel(small_project, output_dir=tmp_path)
+
+    assert small_project.project.last_export is not None
+    assert small_project.project.last_export.at.utcoffset().total_seconds() == 9 * 60 * 60

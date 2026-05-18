@@ -2,14 +2,15 @@
 
 This document is the resume point for any fresh agent or developer picking up where we left off. Depth lives in the cross-referenced docs.
 
-## Where we are right now (commit `c824203` on `main`)
+## Where we are right now (HEAD `309c66b` on `main`, with pre-Step-6 hardening in the working tree)
 
-**The backend is feature-complete. Step 5 (full visual Excel rendering) just shipped.**
+**The backend is feature-complete through Step 5. A pre-Step-6 review pass hardened parent-aware scheduling, project-timezone timestamps, validation edge cases, Excel holiday-gap rendering, docs, and license metadata.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| `309c66b` | 5.5  | Checkpoint 2 iteration: DAL rename, long-pole detection, demo parallel tasks, Excel polish |
 | `c824203` | 5    | Full Option E Excel rendering + real holiday seeding for demos |
 | `38a85a2` | 4.5  | Baseline fields + Cycle Time (Days) header rename |
 | `1829fa5` | 4    | Parent completion cascade with preserve-earlier-children rule |
@@ -19,7 +20,7 @@ Latest commits (most recent first):
 | `b7c357d` | doc  | Initial comprehensive documentation (HANDOFF, MASTERECAP, etc.) |
 | `10a294d` | 0    | Walking-skeleton scaffold |
 
-**70/70 tests passing** (`pytest -q` ~0.45 sec). The end-to-end pipeline plus all four delay/completion/baseline workflows are functional.
+**82/82 tests passing** (`pytest -q` ~0.5 sec). The end-to-end pipeline plus delay/completion/baseline/dependency/critical-path/validation/Excel structural workflows are functional.
 
 ## What works today
 
@@ -27,14 +28,17 @@ Latest commits (most recent first):
 - **Backward-pass CPM** computes `total_float` for every leaf and marks tasks with float == 0 as critical (completed tasks excluded).
 - **Per-task calendar mode** (`working_days` vs `e_days`), per-location work-weeks, per-location holidays.
 - **Manual-start as floor** combined with dependency-driven starts; unanchored leaves are validation errors.
-- **Parent / multi-level hierarchy** with rollup; parents can have their own dependencies and manual starts.
+- **Parent / multi-level hierarchy** with rollup; parents can have their own dependencies and manual starts, inherited by descendant leaves.
+- **Dependencies on parent tasks** use the parent predecessor's rolled-up descendant schedule.
 - **Cumulative `delay_days`** with audit `delay_log`. Manual and auto-catchup-on-load both flow through here.
 - **Auto-catchup math:** Option B (per-task accurate, static). Fresh-project baseline initialization; idempotent within a day.
 - **Completion semantics:** auto-fill date, freeze effective dates, parent cascade with preserve-earlier-children, undo within session.
 - **Project baseline:** `set_project_baseline()` snapshots current dates into `baseline_start` / `baseline_finish` per task.
 - **Atomic JSON I/O** with rotating snapshots.
 - **Two-tier collect validation** (structural fails fast, logical collects).
+- **Project-timezone timestamps** for saves, snapshots, `last_export`, and Excel filenames.
 - **Excel workbook generation** with full Option E rendering:
+  - 5 sheets: Chart Key & Info, Day View, Week View, Schedule Calculations, Critical Path Notes.
   - Frozen-pane metadata: TASK ID, Name, Location, Cycle Time (Days), Baseline Start, Baseline Finish.
   - Segmented bar colors (planned blue, completed green, delayed orange, overdue red).
   - Critical-path dark-red stripe via top/bottom border.
@@ -43,7 +47,6 @@ Latest commits (most recent first):
   - Per-row weekend/holiday "gap" shading for working-day tasks.
   - E-day tasks render continuous through weekends and holidays.
   - Parent summary bars in dark gray with critical inheritance.
-  - 4 sheets: Day View, Week View, Schedule Calculations, Critical Path Notes.
 - **Streamlit UI shell** (read-only) — picks project, displays task table, runs Validate / Save / Build Excel.
 
 ## What's still stubbed (next session's work)
@@ -52,8 +55,8 @@ In priority order (matching the original 9-step plan with steps 1–5 now done):
 
 6. **Streamlit editing surface** — task add/edit/delete in-place, dependency picker with "Dependency Explanation" expander, mark-complete checkbox wired to the cascade, dirty-state badge, browser `beforeunload` warning, New Project form, single-project switching dialog.
 7. **Holiday editor page** — dedicated Streamlit route, tabbed by location, table of `{date, name, source}` with add/edit/delete, "Re-seed from library" with diff preview.
-8. **Expand `examples/npde_demo.json`** — currently 10 tasks; target ~30–50 tasks modeling a generic NPDE program (kickoff → mask design → wafer fab → assembly → burn-in → qual → datasheet → CSR), using public-domain semiconductor flow knowledge only. Real holidays already seeded.
-9. **Remaining test files** — `test_validation.py`, `test_scheduler.py` (calendar math edge cases), `test_locations.py`, `test_holidays.py`, `test_excel_builder.py` (structural assertions on the Option E rendering), `test_excel_visual.py` (opt-in), `test_performance.py` (slow marker).
+8. **Expand `examples/npde_demo.json`** — currently 13 tasks; target ~30–50 tasks modeling a generic NPDE program (kickoff → mask design → wafer fab → assembly → burn-in → qual → datasheet → CSR), using public-domain semiconductor flow knowledge only. Real holidays already seeded.
+9. **Remaining test files / expansions** — broaden `test_validation.py`, add `test_scheduler.py` calendar math edge cases, `test_locations.py`, `test_holidays.py`, more `test_excel_builder.py` structural assertions, `test_excel_visual.py` (opt-in), `test_performance.py` (slow marker).
 
 ## Files modified during this session (beyond the original walking skeleton)
 
@@ -84,12 +87,12 @@ tests/
 └── ...
 
 examples/
-├── small_demo.json    — baseline populated; 27 real USA 2026–2027 holidays
+├── small_demo.json    — baseline populated; 27 real DAL/US 2026–2027 holidays
 └── npde_demo.json     — baseline populated; 173 real holidays across
-                         USA / MLA / TAI / FR-BIP / AIZU
+                         DAL / MLA / TAI / FR-BIP / AIZU
 ```
 
-70 tests total. All passing.
+82 tests total. All passing.
 
 ## Latest demo workbooks (locally; gitignored)
 
@@ -116,7 +119,7 @@ We were at **Checkpoint 2** when the user asked for this handoff — backend com
 
 1. Greet, confirm the user is ready to continue Path A.
 2. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
-3. Run `pytest -q` from `C:\Users\Frosty\PMsuite` — should show 70 passing.
+3. Run `pytest -q` from `C:\Users\Frosty\PMsuite` — should show 82 passing.
 4. Confirm the user's verdict on the latest demo workbooks (Checkpoint 2 visual review). If they say "go", start Step 6.
 
 ## Step 6 — Streamlit editing surface — concrete starting plan
@@ -199,7 +202,7 @@ C:\Users\Frosty\PMsuite\          # local clone; pushed to https://github.com/Fr
 │   ├── scheduler.py
 │   └── validation.py
 ├── ui/streamlit_app.py
-├── tests/                        # 8 test files, 70 tests passing
+├── tests/                        # 11 test files, 82 tests passing
 ├── examples/                     # both demos have real holidays + baseline
 ├── output/                       # gitignored generated Excel files
 └── .logs/gantt_builder.log

@@ -25,8 +25,11 @@ from .models import Project, Task
 from .scheduler import (
     ScheduledTask,
     _add_days_in_calendar,
+    _dependency_schedule,
     _dependency_start_floor,
+    _remove_lag,
     _subtract_days_in_calendar,
+    _task_and_ancestors,
     _topological_order,
 )
 
@@ -67,7 +70,9 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
 
     project_end = max(s.effective_finish for s in schedule.values())
 
-    # Build successors map: task_id -> list of leaf tasks that depend on it
+    # Build successors map: task_id -> list of leaf tasks that directly depend on it.
+    # Parent-involved dependencies are still represented in the long-pole pass;
+    # total_float remains leaf-level diagnostics for direct leaf constraints.
     successors: dict[str, list[Task]] = {tid: [] for tid in leaf_ids}
     for t in leaves:
         for dep in t.dependencies:
@@ -93,29 +98,32 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
                 if succ_ls is None or succ_lf is None:
                     continue
 
+                pred_task = project.task_by_id(dep.id)
                 if dep.type == "FS":
                     # pred.LF <= succ.LS - 1 - lag
-                    lf_constraints.append(succ_ls - timedelta(days=1 + dep.lag_days))
+                    lag_removed = _remove_lag(succ_ls, dep.lag_days, pred_task, project)
+                    lf_constraints.append(lag_removed - timedelta(days=1))
                 elif dep.type == "SS":
                     # pred.LS <= succ.LS - lag  =>  pred.LF <= (that) + (cycle - 1) in pred's calendar
-                    pred_ls_max = succ_ls - timedelta(days=dep.lag_days)
+                    pred_ls_max = _remove_lag(succ_ls, dep.lag_days, pred_task, project)
                     pred_lf_max = _add_days_in_calendar(
                         pred_ls_max, cycle - 1, task.calendar_mode, task.completion_location, project,
                     )
                     lf_constraints.append(pred_lf_max)
                 elif dep.type == "FF":
                     # pred.LF <= succ.LF - lag
-                    lf_constraints.append(succ_lf - timedelta(days=dep.lag_days))
+                    lf_constraints.append(_remove_lag(succ_lf, dep.lag_days, pred_task, project))
                 elif dep.type == "SF":
                     # pred.LS <= succ.LF - lag  =>  pred.LF <= (that) + (cycle - 1)
-                    pred_ls_max = succ_lf - timedelta(days=dep.lag_days)
+                    pred_ls_max = _remove_lag(succ_lf, dep.lag_days, pred_task, project)
                     pred_lf_max = _add_days_in_calendar(
                         pred_ls_max, cycle - 1, task.calendar_mode, task.completion_location, project,
                     )
                     lf_constraints.append(pred_lf_max)
                 else:
                     # defensive fallback — FS semantics
-                    lf_constraints.append(succ_ls - timedelta(days=1 + dep.lag_days))
+                    lag_removed = _remove_lag(succ_ls, dep.lag_days, pred_task, project)
+                    lf_constraints.append(lag_removed - timedelta(days=1))
                 break
 
         lf = min(lf_constraints) if lf_constraints else project_end
@@ -211,27 +219,67 @@ def _compute_long_pole(project: Project, schedule: dict[str, ScheduledTask]) -> 
             continue
         visited.add(task.id)
 
-        # Compute the dep-derived floor each leaf predecessor imposes on this task.
-        floors: dict[str, object] = {}
-        for dep in task.dependencies:
-            pred_sched = schedule.get(dep.id)
-            if pred_sched is None or dep.id not in leaf_index:
-                continue
-            try:
-                floors[dep.id] = _dependency_start_floor(task, dep, pred_sched, project)
-            except Exception:
-                continue
+        # Compute the dep-derived floor each predecessor imposes on this task,
+        # including dependency floors inherited from ancestor parents.
+        floors: list[tuple[str, date, str]] = []
+        for floor_owner in _task_and_ancestors(task, project):
+            for dep in floor_owner.dependencies:
+                pred_sched = _dependency_schedule(dep.id, project, schedule)
+                if pred_sched is None:
+                    continue
+                try:
+                    floors.append((
+                        dep.id,
+                        _dependency_start_floor(task, dep, pred_sched, project),
+                        dep.type,
+                    ))
+                except Exception:
+                    continue
 
         if not floors:
             continue
 
-        max_floor = max(floors.values())
-        for pred_id, floor in floors.items():
+        max_floor = max(floor for _, floor, _ in floors)
+        for pred_id, floor, dep_type in floors:
             if floor == max_floor:
-                pred_task = leaf_index.get(pred_id)
-                if pred_task and not pred_task.is_complete:
-                    long_pole.add(pred_id)
-                    if pred_id not in visited:
-                        queue.append(pred_task)
+                pred_task = project.task_by_id(pred_id)
+                if pred_task is None:
+                    continue
+
+                if pred_id in leaf_index:
+                    if not pred_task.is_complete:
+                        long_pole.add(pred_id)
+                        if pred_id not in visited:
+                            queue.append(pred_task)
+                    continue
+
+                for leaf_id in _gating_leaf_ids_for_parent_dependency(
+                    pred_id, dep_type, project, schedule,
+                ):
+                    leaf_task = leaf_index.get(leaf_id)
+                    if leaf_task and not leaf_task.is_complete:
+                        long_pole.add(leaf_id)
+                        if leaf_id not in visited:
+                            queue.append(leaf_task)
 
     return long_pole
+
+
+def _gating_leaf_ids_for_parent_dependency(
+    parent_id: str,
+    dep_type: str,
+    project: Project,
+    schedule: dict[str, ScheduledTask],
+) -> list[str]:
+    """Pick descendant leaves that drive a parent predecessor's relevant event."""
+    leaf_ids = project.all_descendant_leaf_ids(parent_id)
+    scheduled = [(leaf_id, schedule[leaf_id]) for leaf_id in leaf_ids if leaf_id in schedule]
+    if not scheduled:
+        return []
+
+    if dep_type in {"SS", "SF"}:
+        earliest_start = min(s.computed_start for _, s in scheduled)
+        return [leaf_id for leaf_id, s in scheduled if s.computed_start == earliest_start]
+
+    latest_finish = max(s.effective_finish for _, s in scheduled)
+    return [leaf_id for leaf_id, s in scheduled if s.effective_finish == latest_finish]

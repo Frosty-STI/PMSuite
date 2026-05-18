@@ -184,14 +184,14 @@ Does NOT replay the daily cascade (Option C); does NOT lump-sum to all overdue t
 
 **Decision:** **Option E — segmented static cell coloring.**
 
-- Planned: muted blue `#4A90D9`.
+- Planned: pale blue `#8FB6E1` (checkpoint-2 readability update).
 - Completed: green `#2E8B57`.
 - Delay extension (computed_finish → effective_finish): orange `#E68A00`.
 - Overdue (today > effective_finish, incomplete): red `#D9534F` outline/fill.
 - Critical path indicator: dark red `#8B0000` border or left stripe.
 - Today column: pale yellow `#FFF8C4`.
 - Weekend column (day view): light gray `#F0F0F0`.
-- Holiday column (day view, location-specific): darker gray `#E0E0E0` + name in column header.
+- Holiday column (day view, location-specific): darker gray `#B0B0B0` + name in column header.
 - Parent summary bar: dark gray `#555555` with black border caps; not body-filled.
 
 **No text on bars.** Task ID + name live in frozen leftmost columns.
@@ -256,7 +256,7 @@ end_axis   = ceil_to_sunday (max(latest_effective_finish, today) + 14 days)
 **Decisions:**
 
 - **`completion_location` is REQUIRED on every task.** No project-level default.
-- **8-location closed enum** for v1 (USA, FR-BIP, MLA, TIEMA, CLARK, TIPI, TAI, AIZU). V2 may add more.
+- **8-location closed enum** for v1 (DAL, FR-BIP, MLA, TIEMA, CLARK, TIPI, TAI, AIZU). V2 may add more.
 - **E-day tasks honor location holidays** but ignore work-week.
 - **Holidays partitioned by location** in `settings.holidays.<LOCATION>`.
 - **Week View column headers** labeled by Monday-of-week in USA dates. Task location shown as a metadata column. **Single Week View sheet** — no per-location duplicate sheets.
@@ -278,7 +278,7 @@ Applied to all 8 locations:
 
 | Location | Place                    | UTC offset | Local time @ 10 AM CDT Fri | USA-perspective work-week |
 |----------|--------------------------|------------|----------------------------|---------------------------|
-| USA      | Chicago (HQ)             | UTC−5      | 10:00 Fri                  | Mon–Fri                   |
+| DAL      | Dallas, USA              | UTC−5      | 10:00 Fri                  | Mon–Fri                   |
 | FR-BIP   | Freising, Germany        | UTC+2      | 17:00 Fri                  | Mon–Fri                   |
 | MLA      | Kuala Lumpur, Malaysia   | UTC+8      | 23:00 Fri                  | Sun–Thu                   |
 | TIEMA    | Melaka, Malaysia         | UTC+8      | 23:00 Fri                  | Sun–Thu                   |
@@ -293,7 +293,7 @@ Applied to all 8 locations:
 
 ```python
 LOCATION_TO_LIBRARY = {
-    "USA":    holidays.US(),
+    "DAL":    holidays.US(),
     "FR-BIP": holidays.Germany(subdiv="BY"),       # Bavaria (Freising in Upper Bavaria)
     "MLA":    holidays.Malaysia(subdiv="KUL"),     # Kuala Lumpur
     "TIEMA":  holidays.Malaysia(subdiv="MLK"),     # Melaka
@@ -339,8 +339,8 @@ Holiday seed (e.g., `holidays.Taiwan()` returning Feb 10 for Lunar New Year) is 
 - **23b — Local rotating snapshots ON by default.** `settings.keep_local_snapshots: 10` keeps the last 10 in `projects/.backups/<project_id>/`. Set to 0 to disable. Git is NOT the user-data backup mechanism — user projects live LOCALLY.
 - **23c/d — `.gitignore`** includes `projects/`, `output/` (except `.gitkeep`), `.logs/`, `.streamlit/recents.json`, Python build/cache, IDE, OS. Only `examples/*.json` ships as committed project data.
 - **23e — No pre-commit hooks** in v1; manual `pytest -q` is sufficient.
-- **23f — README** uses standard intro + install + quick-start + how-it-works + data-locality callout + cross-refs. License placeholder TBD (locked as **MIT** after grilling closed).
-- **23g — Two demo projects** ship: `small_demo.json` (7 tasks, USA only, dual-purpose example + test fixture) and `npde_demo.json` (~30-50 tasks, multi-location — currently 10-task stub awaiting expansion).
+- **23f — README** uses standard intro + install + quick-start + how-it-works + data-locality callout + cross-refs. License is **MIT**.
+- **23g — Two demo projects** ship: `small_demo.json` (7 tasks, DAL only, dual-purpose example + test fixture) and `npde_demo.json` (~30-50 tasks, multi-location — currently 13-task starter awaiting expansion).
 
 **Why:** GitHub repo distributes the source code; users' projects stay on their machines. Local snapshots cover crash recovery; user backs up to their own cloud / network share if they want history beyond that.
 
@@ -381,7 +381,7 @@ Holiday seed (e.g., `holidays.Taiwan()` returning Feb 10 for Lunar New Year) is 
 - **26a — Color palette locked** per the [Q15 table](#q15--gantt-bar-rendering) (planned blue, completed green, delay orange, overdue red, critical dark red border, today yellow, weekend/holiday grays, parent summary dark gray).
 - **26b — Schedule Calculations sheet columns** (left to right): `TASK ID | Name | Hierarchy Level | Parent ID | Location | Calendar Mode | Cycle Time | Manual Start Date | Computed Start | Computed Finish | Delay Days | Effective Finish | Actual Completion Date | Is Complete | Dependencies | Total Float | Is Critical | Was On Critical Path | Downstream Impact | Validation Warnings`. Header row frozen; ID and Name columns frozen left.
 - **26c — Critical Path Notes layout** top to bottom: auto-generated plain-language summary, summary block (project name, end date, counts), critical path tasks table, tasks delaying the project (subset of critical with delay > 0), top 5 near-critical (lowest non-zero float), overdue incomplete tasks, recently completed late (last 30 days), recently completed early (last 30 days), dependency warnings.
-- **26d — Demo projects:** `small_demo.json` (7 tasks, USA only) and `npde_demo.json` (~30-50 multi-location, currently 10-task placeholder pending expansion).
+- **26d — Demo projects:** `small_demo.json` (7 tasks, DAL only) and `npde_demo.json` (~30-50 multi-location, currently 13-task starter pending expansion).
 - **26e — Logging:** mandatory rotating file at `.logs/gantt_builder.log`. 10 MB, last 5 kept. Default level `INFO`. Always on (no setting required).
 
 ---
@@ -401,7 +401,7 @@ Holiday seed (e.g., `holidays.Taiwan()` returning Feb 10 for Lunar New Year) is 
 - **Demo audience:** external customers / cross-team handoff.
 - **Data sourcing:** public web only. Never TI internal data in the public repo.
 - **Commit cadence:** per-feature commits.
-- **Path:** A (autonomous) or B (pair-mode) — user has not yet selected.
+- **Path:** A (autonomous go-mode) with checkpoint reviews at natural boundaries.
 
 ---
 
@@ -437,19 +437,21 @@ Decisions made during the autonomous implementation push (after the original Q1�
 
 **Why:** Demonstrates the per-location holiday model authentically. With real holidays:
 - `small_demo` has 27 US holidays.
-- `npde_demo` has 173 holidays across USA (27), MLA (41), TAI (46), FR-BIP (24), AIZU (35).
+- `npde_demo` has 173 holidays across DAL (27), MLA (41), TAI (46), FR-BIP (24), AIZU (35).
 
-Real holidays push working-day task dates, exercise the holiday rendering in Excel, and surface multi-location holiday overlap in column headers (e.g., Christmas observed by USA + FR-BIP + AIZU).
+Real holidays push working-day task dates, exercise the holiday rendering in Excel, and surface multi-location holiday overlap in column headers (e.g., Christmas observed by DAL + FR-BIP + AIZU).
 
 ---
 
-## Q30 — Forward-pass scheduling treats parent dependencies as leaf-only
+## Q30 — Parent-aware scheduling hardening
 
-**Decision (interim, known limitation):** The current scheduler's forward pass only handles dependencies where both predecessor AND successor are leaves. Dependencies that involve parent tasks (a leaf depending on a parent, or a parent having dependencies) are silently ignored by the scheduler — the dep is treated as if it didn't exist.
+**Decision:** The scheduler must honor parent manual starts, parent dependencies, and dependencies on parent predecessors.
 
-**Why this is a limitation:** Q7b explicitly allows parents to have their own dependencies. The walking skeleton doesn't yet handle this case correctly. The forward pass schedules leaves first in topological order, then rolls up parents. Leaves depending on parents fail because the parent isn't yet scheduled when the leaf is processed.
+**Mechanics:** Descendant leaves inherit manual-start floors and dependency floors from their ancestor parents. A dependency on a parent predecessor uses that parent's rolled-up descendant schedule. The leaf topological order expands parent predecessors into their descendant leaves so rollups are available before dependent leaves are scheduled.
 
-**Status:** Tracked. Demo projects avoid this case (no leaf depends on a parent in `small_demo.json` or `npde_demo.json`). To be fixed in a future commit before this scenario is needed in production. The validation layer accepts these structures but the scheduler silently drops the constraint.
+**Validation:** Parent cycles, dependencies on descendants, and dependencies on ancestors are logical validation errors because they fight the parent/descendant rollup graph.
+
+**Status:** Implemented in the pre-Step-6 hardening pass and covered by tests.
 
 ---
 
@@ -466,6 +468,28 @@ Real holidays push working-day task dates, exercise the holiday rendering in Exc
 **Decision:** Today appears in both the Day View column header (yellow fill `#FFF8C4`) AND as a thick black left border on every body cell in today's column. The body-cell border is implemented by precomputing every status × critical × today format combination (~30 distinct formats). Empty cells in today's column receive a `empty_today` format that combines the yellow fill with the black left border.
 
 **Why:** A header-only indicator is easy to miss when scrolling through hundreds of tasks. The vertical line on every body cell makes today findable from anywhere on the sheet.
+
+---
+
+## Q33 — Checkpoint 2 visual-review iteration
+
+**Decision:** Accept the user-requested checkpoint polish:
+
+- Rename the USA site code to **DAL** while retaining US holiday seeding.
+- Use planned blue `#8FB6E1` and holiday gray `#B0B0B0` for better Excel readability.
+- Add a frozen-pane **Dependencies** column using compact numeric IDs.
+- Add a first worksheet, **Chart Key & Info**, with working weeks, color legend, critical-path explanation, today-line explanation, and frozen-pane guide.
+- Use the **long pole** as the red critical-path display set while retaining CPM `total_float` values in Schedule Calculations.
+
+**Why:** The first visual review showed that external users need immediate context inside the workbook itself, and strict float-only critical display was less useful than the visible gating chain for this scheduling model.
+
+---
+
+## Q34 — Project-timezone audit/export timestamps
+
+**Decision:** Save timestamps, snapshot names, Excel export filenames, and `last_export.at` use `project.project.timezone` when possible. If the configured IANA timezone is unavailable, the system falls back to the host local timezone rather than failing a save/export path.
+
+**Why:** The schema says project timezone governs filenames and audit metadata. This keeps generated artifacts consistent even when the app runs on a machine in a different timezone.
 
 ---
 

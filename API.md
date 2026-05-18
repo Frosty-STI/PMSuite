@@ -121,7 +121,7 @@ class ScheduledTask:
 
 Includes both leaf tasks and parent rollups. Parent values are derived from descendants: `start = min(child starts)`, `finish = max(child finishes)`, `effective_finish = max(child effective_finishes)`.
 
-**Walking-skeleton behavior (current):** FS dependencies fully supported with positive/negative lag. SS / FF / SF currently fall back to FS semantics with a `TODO` note. Backward-pass float computation not yet implemented (lives in `critical_path.py`).
+**Current behavior:** FS / SS / FF / SF dependencies are supported with positive/negative lag counted in the predecessor's calendar mode. Parent manual starts and parent dependencies are inherited by descendant leaves, and dependencies on parent predecessors use the parent's rolled-up descendant schedule. Backward-pass float and long-pole critical-path display are implemented in `critical_path.py`.
 
 **Raises:** `StructuralError` if a task is unanchored or has invalid cycle time. Validation should catch these first; this is a safety net.
 
@@ -146,13 +146,13 @@ output_path = api.build_excel(project, output_dir="custom/output/dir")
 **Side effects:**
 - Runs `validate_project()` first; raises `ValidationFailure` if logical errors.
 - Computes the schedule.
-- Writes a 4-sheet workbook to `<output_dir>/gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx`.
+- Writes a workbook to `<output_dir>/gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx`.
 - Updates `project.project.last_export = LastExport(path=..., at=...)`. **This mutates the project object.** Caller may want to `save_project` after to persist the audit trail.
 - Collision-safe with `_2`, `_3` suffixes on rare same-second collisions.
 
 **Raises:** `ValidationFailure` (re-raised from validation). Any file-system error from xlsxwriter.
 
-For the full Excel output specification, see [EXCELBUILDER.md](EXCELBUILDER.md).
+For the full Excel output specification, see [EXCELBUILDER.md](EXCELBUILDER.md). The workbook currently contains Chart Key & Info, Day View, Week View, Schedule Calculations, and Critical Path Notes.
 
 ---
 

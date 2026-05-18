@@ -30,11 +30,13 @@ def test_end_to_end_small_demo(small_project, tmp_path: Path):
 
 
 def test_excel_has_required_sheets(small_project, tmp_path: Path):
-    """Confirm the four mandatory sheets are present in the generated workbook."""
+    """Confirm the mandatory sheets are present in the generated workbook."""
     openpyxl = __import__("openpyxl")
     output_path = api.build_excel(small_project, output_dir=tmp_path)
     wb = openpyxl.load_workbook(str(output_path), read_only=True)
     sheet_names = wb.sheetnames
+    assert sheet_names[0] == "Chart Key & Info"
+    assert "Chart Key & Info" in sheet_names
     assert "Day View" in sheet_names
     assert "Week View" in sheet_names
     assert "Schedule Calculations" in sheet_names

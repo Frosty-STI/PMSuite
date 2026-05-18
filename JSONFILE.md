@@ -56,7 +56,7 @@ Canonical serialization always includes every defined field with its explicit de
 ```jsonc
 {
   "holidays": {
-    "USA":    [ { "date": "2026-07-04", "name": "Independence Day", "source": "seeded" } ],
+      "DAL":    [ { "date": "2026-07-04", "name": "Independence Day", "source": "seeded" } ],
     "MLA":    [ { "date": "2026-08-31", "name": "Hari Kebangsaan", "source": "seeded" } ],
     "CLARK":  [],
     "TIPI":   [],
@@ -66,7 +66,7 @@ Canonical serialization always includes every defined field with its explicit de
     "AIZU":   []
   },
   "work_weeks": {
-    "USA":    ["MON", "TUE", "WED", "THU", "FRI"],
+    "DAL":    ["MON", "TUE", "WED", "THU", "FRI"],
     "FR-BIP": ["MON", "TUE", "WED", "THU", "FRI"],
     "MLA":    ["SUN", "MON", "TUE", "WED", "THU"],
     "TIEMA":  ["SUN", "MON", "TUE", "WED", "THU"],
@@ -102,7 +102,7 @@ Canonical serialization always includes every defined field with its explicit de
 ### Validation rules for settings
 
 - Every location used by any task must have an entry in both `holidays` and `work_weeks`. Missing entries raise `MissingHolidayDataError`.
-- Locations must be from the 8-element v1 enum: `USA`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`.
+- Locations must be from the 8-element v1 enum: `DAL`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`.
 
 ## `tasks` array
 
@@ -135,7 +135,7 @@ Each entry is a task. Tasks reference each other by ID for dependencies and pare
 |--------------------------|------------------------------------------|----------|---------|-------|
 | `id`                     | string                                   | yes      | —       | System-generated `TASK-NNN`. Never user-edited. Sequential, gaps allowed, never reused. |
 | `name`                   | string                                   | yes      | —       | User-provided. May change without breaking dependencies (IDs are stable). |
-| `completion_location`    | enum                                     | yes      | —       | One of: `USA`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`. |
+| `completion_location`    | enum                                     | yes      | —       | One of: `DAL`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`. |
 | `calendar_mode`          | `"working_days" \| "e_days"`             | yes      | —       | `e_days` counts every calendar day (e.g., oven cycles). `working_days` counts only the location's working-week minus its holidays. |
 | `cycle_time_days`        | int \| null                              | yes if leaf, MUST be null if parent | —     | Inclusive. Minimum 1 for leaves. Parents derive duration from children — `cycle_time_days` MUST be unset for parents (else `ParentHasCycleTimeError`). Excel column header: **"Cycle Time (Days)"**. |
 | `manual_start_date`      | ISO date string \| null                  | required for leaves with no dependencies, otherwise optional | `null` | Acts as a **floor** when present. Combined with dependency-driven starts via max. |
@@ -164,7 +164,7 @@ Each entry is a task. Tasks reference each other by ID for dependencies and pare
 | `type`     | `"FS" \| "SS" \| "FF" \| "SF"`     | `"FS"`  | FS = Finish-to-Start (default). See [DESIGN.md §8](DESIGN.md). |
 | `lag_days` | int                                 | `0`     | Counted in **predecessor's** calendar mode. Negative = lead time. |
 
-**Walking-skeleton status:** FS fully supported. SS / FF / SF currently fall back to FS semantics with a TODO; full handling lands in the dependency-types commit.
+FS / SS / FF / SF are supported. `lag_days` is counted in the predecessor's calendar mode, then the successor resolves in its own calendar mode.
 
 ### Bare string shorthand
 
@@ -254,8 +254,8 @@ These are computed at runtime from the stored data. If you see them in a JSON fi
     "history":     []
   },
   "settings": {
-    "holidays":             { "USA": [] },
-    "work_weeks":           { "USA": ["MON","TUE","WED","THU","FRI"] },
+    "holidays":             { "DAL": [] },
+    "work_weeks":           { "DAL": ["MON","TUE","WED","THU","FRI"] },
     "next_task_id":         2,
     "output_directory":     "output",
     "keep_local_snapshots": 10,
@@ -268,7 +268,7 @@ These are computed at runtime from the stored data. If you see them in a JSON fi
     {
       "id":                     "TASK-001",
       "name":                   "First task",
-      "completion_location":    "USA",
+      "completion_location":    "DAL",
       "calendar_mode":          "e_days",
       "cycle_time_days":        1,
       "manual_start_date":      "2026-05-18",
@@ -299,7 +299,7 @@ Tier 2 (logical — collects all errors): duplicate IDs, missing/circular/self-d
 {
   "id":                     "TASK-001",
   "name":                   "Program kickoff",
-  "completion_location":    "USA",
+  "completion_location":    "DAL",
   "calendar_mode":          "working_days",
   "cycle_time_days":        1,
   "manual_start_date":      "2026-05-18",
@@ -375,7 +375,7 @@ Tier 2 (logical — collects all errors): duplicate IDs, missing/circular/self-d
 {
   "id":                     "TASK-005",
   "name":                   "Order parts",
-  "completion_location":    "USA",
+  "completion_location":    "DAL",
   "calendar_mode":          "e_days",
   "cycle_time_days":        2,
   "manual_start_date":      null,

@@ -208,16 +208,16 @@ When the user saves, set `window.onbeforeunload = null` via the same component. 
 - `streamlit >= 1.30` (for stable `st.dataframe` editing, `st.components.v1.html`, modal-style forms via `st.form`).
 - Browser: any current Chrome / Edge / Firefox / Safari.
 
-## Walking-skeleton state (current implementation)
+## Current UI state after Step 5
 
-What works today (commit `10a294d`):
+What works today:
 
 - Project picker dropdown (projects/ + examples/).
 - Project loading and display.
 - Read-only task table.
 - Validate / Save / Build Excel buttons with spinners and error rendering.
 
-What's stubbed:
+What's still pending for Step 6:
 
 - Everything labeled "(planned)" above. Specifically:
   - Task editing (add, edit, delete in-place).

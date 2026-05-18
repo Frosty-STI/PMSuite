@@ -11,12 +11,12 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 from .errors import StructuralError
 from .logging_config import get_logger
 from .models import Project
+from .time_utils import project_now
 
 _log = get_logger(__name__)
 
@@ -54,7 +54,8 @@ def save_project(project: Project, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    project.project.updated_at = datetime.now().astimezone()
+    now = project_now(project)
+    project.project.updated_at = now
 
     payload = project.model_dump(mode="json", exclude_defaults=False, exclude_none=False)
     json_text = json.dumps(payload, indent=2, ensure_ascii=False)
@@ -75,15 +76,15 @@ def save_project(project: Project, path: str | Path) -> None:
     _log.info("Saved project %s to %s", project.project.id, path)
 
     if project.settings.keep_local_snapshots > 0:
-        _write_snapshot(project, path, json_text)
+        _write_snapshot(project, path, json_text, now)
 
 
-def _write_snapshot(project: Project, project_path: Path, json_text: str) -> None:
+def _write_snapshot(project: Project, project_path: Path, json_text: str, now) -> None:
     """Write a rotating snapshot under projects/.backups/<project_id>/."""
     snapshot_dir = project_path.parent / ".backups" / project.project.id
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    timestamp = now.strftime("%Y-%m-%d_%H%M%S")
     snapshot_file = snapshot_dir / f"{project.project.id}_{timestamp}.json"
     snapshot_file.write_text(json_text, encoding="utf-8")
 

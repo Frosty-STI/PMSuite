@@ -50,6 +50,7 @@ def validate_project(project: Project) -> list[str]:
     _validate_self_dependencies(project, errors)
     _validate_missing_dependencies(project, errors)
     _validate_circular_dependencies(project, errors)
+    _validate_expanded_leaf_dependency_cycles(project, errors)
     _validate_parent_relationships(project, errors)
     _validate_cycle_times(project, errors, warnings)
     _validate_anchoring(project, errors)
@@ -152,6 +153,60 @@ def _validate_circular_dependencies(project: Project, errors: list[GanttError]) 
         ))
 
 
+def _validate_expanded_leaf_dependency_cycles(project: Project, errors: list[GanttError]) -> None:
+    """Detect cycles after parent dependencies are inherited by descendant leaves."""
+    leaves = [t for t in project.tasks if not project.has_subtasks(t.id)]
+    leaf_ids = {t.id for t in leaves}
+    graph: dict[str, list[str]] = {t.id: [] for t in leaves}
+
+    for task in leaves:
+        for owner in [task] + [project.task_by_id(a) for a in _ancestor_ids(project, task)]:
+            if owner is None:
+                continue
+            for dep in owner.dependencies:
+                pred = project.task_by_id(dep.id)
+                if pred is None:
+                    continue
+                if project.has_subtasks(pred.id):
+                    graph[task.id].extend(
+                        leaf_id for leaf_id in project.all_descendant_leaf_ids(pred.id)
+                        if leaf_id in leaf_ids and leaf_id != task.id
+                    )
+                elif pred.id in leaf_ids and pred.id != task.id:
+                    graph[task.id].append(pred.id)
+
+    visited: dict[str, int] = {}
+    cycles: list[list[str]] = []
+
+    def dfs(node: str, path: list[str]) -> None:
+        state = visited.get(node, 0)
+        if state == 1:
+            cycle_start = path.index(node)
+            cycles.append(path[cycle_start:] + [node])
+            return
+        if state == 2:
+            return
+        visited[node] = 1
+        for neighbor in graph.get(node, []):
+            dfs(neighbor, path + [node])
+        visited[node] = 2
+
+    for tid in graph:
+        if visited.get(tid, 0) == 0:
+            dfs(tid, [])
+
+    reported: set[frozenset[str]] = set()
+    for cycle in cycles:
+        key = frozenset(cycle)
+        if key in reported:
+            continue
+        reported.add(key)
+        errors.append(CircularDependencyError(
+            f"Parent-expanded dependency cycle detected: {' -> '.join(cycle)}.",
+            affected_tasks=cycle,
+        ))
+
+
 def _validate_parent_relationships(project: Project, errors: list[GanttError]) -> None:
     valid_ids = {t.id for t in project.tasks}
     for t in project.tasks:
@@ -165,6 +220,73 @@ def _validate_parent_relationships(project: Project, errors: list[GanttError]) -
                 f"Task '{t.id}' has itself as parent_id.",
                 affected_tasks=[t.id],
             ))
+
+    _validate_parent_cycles(project, errors)
+    _validate_parent_dependency_cycles(project, errors)
+
+
+def _validate_parent_cycles(project: Project, errors: list[GanttError]) -> None:
+    """Detect indirect parent loops such as A.parent=B and B.parent=A."""
+    reported: set[frozenset[str]] = set()
+
+    for task in project.tasks:
+        path: list[str] = []
+        seen: set[str] = set()
+        current: Task | None = task
+
+        while current and current.parent_id:
+            if current.id in seen:
+                cycle_start = path.index(current.id) if current.id in path else 0
+                cycle = path[cycle_start:] + [current.id]
+                key = frozenset(cycle)
+                if key not in reported:
+                    reported.add(key)
+                    errors.append(InvalidParentRelationshipError(
+                        f"Parent cycle detected: {' -> '.join(cycle)}.",
+                        affected_tasks=cycle,
+                    ))
+                break
+
+            seen.add(current.id)
+            path.append(current.id)
+            current = project.task_by_id(current.parent_id)
+
+
+def _validate_parent_dependency_cycles(project: Project, errors: list[GanttError]) -> None:
+    """Reject dependencies that would fight the parent/descendant rollup graph."""
+    for task in project.tasks:
+        descendants = set(project.all_descendant_ids(task.id))
+        ancestors = set(_ancestor_ids(project, task))
+
+        for dep in task.dependencies:
+            if dep.id in descendants:
+                errors.append(InvalidParentRelationshipError(
+                    f"Task '{task.id}' depends on descendant '{dep.id}', which creates "
+                    "an invalid parent/dependency cycle.",
+                    affected_tasks=[task.id, dep.id],
+                ))
+            if dep.id in ancestors:
+                errors.append(InvalidParentRelationshipError(
+                    f"Task '{task.id}' depends on ancestor '{dep.id}', which creates "
+                    "an invalid parent/dependency cycle.",
+                    affected_tasks=[task.id, dep.id],
+                ))
+
+
+def _ancestor_ids(project: Project, task: Task) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = {task.id}
+    current = task
+    while current.parent_id:
+        if current.parent_id in seen:
+            break
+        parent = project.task_by_id(current.parent_id)
+        if parent is None:
+            break
+        result.append(parent.id)
+        seen.add(parent.id)
+        current = parent
+    return result
 
 
 def _validate_cycle_times(project: Project, errors: list[GanttError], warnings: list[str]) -> None:
