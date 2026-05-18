@@ -2,6 +2,9 @@
 projects/
 projects/.backups/
 
+# rotating snapshots that get created when API saves demo projects
+examples/.backups/
+
 # build artifacts (keep the empty directory tracked via .gitkeep)
 output/*
 !output/.gitkeep

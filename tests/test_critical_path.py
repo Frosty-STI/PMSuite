@@ -30,8 +30,8 @@ def _make_project(tasks: list[Task]) -> Project:
             updated_at=datetime(2026, 5, 13, 12, 0, 0),
         ),
         settings=Settings(
-            holidays={"USA": []},
-            work_weeks={"USA": ["MON", "TUE", "WED", "THU", "FRI"]},
+            holidays={"DAL": []},
+            work_weeks={"DAL": ["MON", "TUE", "WED", "THU", "FRI"]},
             next_task_id=len(tasks) + 1,
         ),
         tasks=tasks,
@@ -45,7 +45,7 @@ def _eday_task(task_id: str, name: str, cycle: int, manual_start: date | None = 
     return Task(
         id=task_id,
         name=name,
-        completion_location="USA",
+        completion_location="DAL",
         calendar_mode="e_days",
         cycle_time_days=cycle,
         manual_start_date=manual_start,
@@ -60,7 +60,7 @@ def _parent_task(task_id: str, name: str) -> Task:
     return Task(
         id=task_id,
         name=name,
-        completion_location="USA",
+        completion_location="DAL",
         calendar_mode="e_days",
         cycle_time_days=None,
     )
@@ -180,7 +180,7 @@ def test_critical_path_with_lag():
         # C has a +5 day lag — pushes its start far past B; it'll be critical
         Task(
             id="TASK-003", name="C-lagged",
-            completion_location="USA", calendar_mode="e_days",
+            completion_location="DAL", calendar_mode="e_days",
             cycle_time_days=1,
             dependencies=[Dependency(id="TASK-001", type="FS", lag_days=5)],
         ),

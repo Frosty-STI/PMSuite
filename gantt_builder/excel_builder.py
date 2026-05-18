@@ -43,8 +43,22 @@ _log = get_logger(__name__)
 
 
 # Frozen-pane metadata columns (left of the date axis)
-_METADATA_COLS = ["TASK ID", "Name", "Location", "Cycle Time (Days)", "Baseline Start", "Baseline Finish"]
+_METADATA_COLS = [
+    "TASK ID", "Name", "Location", "Cycle Time (Days)",
+    "Baseline Start", "Baseline Finish", "Dependencies",
+]
 _METADATA_COL_COUNT = len(_METADATA_COLS)
+
+
+def _short_dep_ids(task) -> str:
+    """Format dependencies as comma-separated numerical task IDs.
+
+    e.g., a task depending on TASK-002 and TASK-007 renders as "002, 007".
+    Empty string for tasks with no dependencies.
+    """
+    if not task.dependencies:
+        return ""
+    return ", ".join(d.id.split("-")[-1] for d in task.dependencies)
 
 
 # -------------------------------------------------------------------------
@@ -74,6 +88,7 @@ def build_excel(
     formats = _build_formats(workbook)
     axis_start, axis_end = _compute_axis(project, schedule)
 
+    _build_chart_key_info(workbook, project, formats)
     _build_day_view(workbook, project, schedule, critical_path, formats, axis_start, axis_end)
     _build_week_view(workbook, project, schedule, critical_path, formats, axis_start, axis_end)
     _build_schedule_calculations(workbook, project, schedule, critical_path, formats)
@@ -87,13 +102,13 @@ def build_excel(
 # -------------------------------------------------------------------------
 # Format precomputation
 
-# Color palette (locked per DESIGN.md §14.4 / Q26a)
-_C_PLANNED   = "#4A90D9"
+# Color palette (DESIGN.md §14.4 / Q26a, with iteration after checkpoint 2)
+_C_PLANNED   = "#8FB6E1"   # paler than original #4A90D9 for better contrast with critical border
 _C_COMPLETED = "#2E8B57"
 _C_DELAYED   = "#E68A00"
 _C_OVERDUE   = "#D9534F"
 _C_WEEKEND   = "#F0F0F0"
-_C_HOLIDAY   = "#E0E0E0"
+_C_HOLIDAY   = "#B0B0B0"   # darker than original #E0E0E0 — more visible against white
 _C_TODAY     = "#FFF8C4"
 _C_PARENT    = "#555555"
 _C_CRITICAL_BORDER = "#8B0000"
@@ -199,7 +214,7 @@ def _compute_axis(project: Project, schedule: dict[str, ScheduledTask]) -> tuple
 # Shared row writing helpers
 
 def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
-    """Write the six frozen-pane metadata columns for one task row."""
+    """Write the seven frozen-pane metadata columns for one task row."""
     sheet.write(row_idx, 0, task.id, formats["task_id"])
     sheet.write(row_idx, 1, task.name, formats["task_name"])
     sheet.write(row_idx, 2, task.completion_location, formats["task_name"])
@@ -212,6 +227,7 @@ def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
     sheet.write(row_idx, 5,
                 task.baseline_finish.isoformat() if task.baseline_finish else "",
                 formats["task_name"])
+    sheet.write(row_idx, 6, _short_dep_ids(task), formats["task_name"])
 
 
 def _set_metadata_column_widths(sheet) -> None:
@@ -221,6 +237,7 @@ def _set_metadata_column_widths(sheet) -> None:
     sheet.set_column(2, 2, 10)   # Location
     sheet.set_column(3, 3, 8)    # Cycle Time (Days)
     sheet.set_column(4, 5, 13)   # Baseline Start / Baseline Finish
+    sheet.set_column(6, 6, 14)   # Dependencies (numerical IDs)
 
 
 def _build_holiday_name_map(project: Project) -> dict[date, str]:
@@ -535,6 +552,137 @@ def _build_summary(project, schedule, critical_path, overdue, delayed) -> str:
         f"{len(critical_path.critical_task_ids)} tasks on critical path. "
         f"{len(overdue)} overdue. {len(delayed)} delayed."
     )
+
+
+# -------------------------------------------------------------------------
+# Chart Key & Info (reference / legend sheet)
+
+def _build_chart_key_info(workbook, project: Project, formats) -> None:
+    """Reference sheet documenting work-week per location and the color legend."""
+    from .locations import LOCATION_DISPLAY
+
+    sheet = workbook.add_worksheet("Chart Key & Info")
+
+    title_fmt = workbook.add_format({
+        "bold": True, "font_size": 14, "align": "left", "valign": "vcenter",
+    })
+    section_fmt = workbook.add_format({
+        "bold": True, "font_size": 11, "bg_color": _C_HEADER,
+        "border": 1, "align": "left",
+    })
+    body_fmt = workbook.add_format({"border": 1, "align": "left", "valign": "vcenter"})
+    body_bold_fmt = workbook.add_format({"border": 1, "align": "left", "bold": True})
+
+    sheet.set_column(0, 0, 22)   # Sample / Code
+    sheet.set_column(1, 1, 28)   # Site / Color
+    sheet.set_column(2, 2, 70)   # Description
+
+    row = 0
+    sheet.set_row(row, 25)
+    sheet.write(row, 0, "PMSuite Gantt Chart — Key & Info", title_fmt)
+    row += 2
+
+    # -- Working Weeks by Location ---------------------------------------
+    sheet.merge_range(row, 0, row, 2, "Working Weeks by Location", section_fmt)
+    row += 1
+    sheet.write(row, 0, "Code", body_bold_fmt)
+    sheet.write(row, 1, "Site", body_bold_fmt)
+    sheet.write(row, 2, "Working Days (USA-perspective)", body_bold_fmt)
+    row += 1
+
+    weekday_names = {
+        "MON": "Mon", "TUE": "Tue", "WED": "Wed", "THU": "Thu",
+        "FRI": "Fri", "SAT": "Sat", "SUN": "Sun",
+    }
+
+    # Iterate the project's work_weeks so we only show locations actually used
+    for code in sorted(project.settings.work_weeks.keys()):
+        days = project.settings.work_weeks[code]
+        days_str = ", ".join(weekday_names.get(d, d) for d in days)
+        sheet.write(row, 0, code, body_fmt)
+        sheet.write(row, 1, LOCATION_DISPLAY.get(code, code), body_fmt)
+        sheet.write(row, 2, days_str, body_fmt)
+        row += 1
+
+    row += 1
+
+    # -- Color Legend ----------------------------------------------------
+    sheet.merge_range(row, 0, row, 2, "Color Legend (Gantt bar segments)", section_fmt)
+    row += 1
+    sheet.write(row, 0, "Sample", body_bold_fmt)
+    sheet.write(row, 1, "Name", body_bold_fmt)
+    sheet.write(row, 2, "Meaning", body_bold_fmt)
+    row += 1
+
+    legend = [
+        ("planned",   "Planned (muted blue)",
+         "An in-progress task during its scheduled cycle (computed_start to computed_finish)."),
+        ("completed", "Completed (green)",
+         "A task marked is_complete. The entire bar shows as completed regardless of segment."),
+        ("delayed",   "Delay extension (orange)",
+         "Days added by cumulative delay_days beyond computed_finish, up to effective_finish."),
+        ("overdue",   "Overdue tail (red)",
+         "Days from effective_finish to today on an incomplete task that should have been done already."),
+        ("parent",    "Parent summary (dark gray)",
+         "A rolled-up parent task's span across all of its descendants."),
+        ("weekend_gap", "Weekend gap (light gray)",
+         "Inside a working-day task's bar, days that are not part of that location's work-week."),
+        ("holiday_gap", "Holiday gap (darker gray)",
+         "Inside a working-day task's bar, days that fall on a location-specific holiday."),
+        ("empty_today", "Today line (yellow)",
+         "The column for today's date is marked across every row with a thick black left border."),
+    ]
+    for key, name, description in legend:
+        sheet.write_blank(row, 0, None, formats[key])
+        sheet.write(row, 1, name, body_fmt)
+        sheet.write(row, 2, description, body_fmt)
+        sheet.set_row(row, 22)
+        row += 1
+
+    row += 1
+
+    # -- Critical Path indicator -----------------------------------------
+    sheet.merge_range(row, 0, row, 2, "Critical Path Indicator", section_fmt)
+    row += 1
+    sheet.write(row, 0, "Sample", body_bold_fmt)
+    sheet.write(row, 1, "Name", body_bold_fmt)
+    sheet.write(row, 2, "Meaning", body_bold_fmt)
+    row += 1
+
+    sheet.write_blank(row, 0, None, formats["planned_critical"])
+    sheet.write(row, 1, "Critical-path stripe (dark red border)", body_fmt)
+    sheet.write(row, 2,
+                "Tasks on the project's critical path show a dark red top + bottom border "
+                "on every bar cell. These are the 'long pole' tasks driving the project end date — "
+                "any slip on a critical task pushes the project end. Tasks with parallel chains "
+                "of shorter cycle time are NOT critical; only the longest path through the "
+                "dependency graph is marked.",
+                body_fmt)
+    sheet.set_row(row, 60)
+    row += 2
+
+    # -- Reading the frozen pane -----------------------------------------
+    sheet.merge_range(row, 0, row, 2, "Reading the Frozen Pane (Day View / Week View)", section_fmt)
+    row += 1
+    sheet.write(row, 0, "Column", body_bold_fmt)
+    sheet.write(row, 1, "Type", body_bold_fmt)
+    sheet.write(row, 2, "Meaning", body_bold_fmt)
+    row += 1
+
+    pane_rows = [
+        ("TASK ID",            "System-generated", "Stable sequential identifier (TASK-NNN). Never reused, gaps allowed."),
+        ("Name",               "User-supplied",    "Free-form task name. May change without breaking dependencies."),
+        ("Location",           "Code",             "Site code (e.g., DAL, MLA, TAI). See Working Weeks section."),
+        ("Cycle Time (Days)",  "Integer",          "Inclusive task duration in the task's calendar mode (e_days or working_days)."),
+        ("Baseline Start",     "Date",             "The user-committed planned start. Does not shift with delays — for variance reporting."),
+        ("Baseline Finish",    "Date",             "The user-committed planned finish. Pair with Baseline Start to track plan vs actual."),
+        ("Dependencies",       "ID list",          "Numerical task IDs that must complete before this task starts. e.g., '003, 007' = depends on TASK-003 and TASK-007."),
+    ]
+    for col_name, kind, description in pane_rows:
+        sheet.write(row, 0, col_name, body_fmt)
+        sheet.write(row, 1, kind, body_fmt)
+        sheet.write(row, 2, description, body_fmt)
+        row += 1
 
 
 def _hierarchy_level(project: Project, task_id: str) -> int:

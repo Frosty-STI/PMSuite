@@ -4,13 +4,13 @@
     "name": "Small Demo Project",
     "timezone": "America/Chicago",
     "created_at": "2026-05-13T12:00:00-05:00",
-    "updated_at": "2026-05-14T22:51:30.472675-05:00",
+    "updated_at": "2026-05-17T20:17:20.729799-05:00",
     "last_export": null,
     "history": []
   },
   "settings": {
     "holidays": {
-      "USA": [
+      "DAL": [
         {
           "date": "2026-01-01",
           "name": "New Year's Day",
@@ -149,7 +149,7 @@
       ]
     },
     "work_weeks": {
-      "USA": [
+      "DAL": [
         "MON",
         "TUE",
         "WED",
@@ -169,7 +169,7 @@
     {
       "id": "TASK-001",
       "name": "Kickoff meeting",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": 1,
       "manual_start_date": "2026-05-18",
@@ -185,7 +185,7 @@
     {
       "id": "TASK-002",
       "name": "Order parts",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": 2,
       "manual_start_date": null,
@@ -207,7 +207,7 @@
     {
       "id": "TASK-003",
       "name": "Receive parts",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": 3,
       "manual_start_date": null,
@@ -229,7 +229,7 @@
     {
       "id": "TASK-004",
       "name": "Build prototype",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": null,
       "manual_start_date": null,
@@ -245,7 +245,7 @@
     {
       "id": "TASK-005",
       "name": "Assemble unit",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": 5,
       "manual_start_date": null,
@@ -267,7 +267,7 @@
     {
       "id": "TASK-006",
       "name": "Calibrate",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "e_days",
       "cycle_time_days": 2,
       "manual_start_date": null,
@@ -289,7 +289,7 @@
     {
       "id": "TASK-007",
       "name": "Report results",
-      "completion_location": "USA",
+      "completion_location": "DAL",
       "calendar_mode": "working_days",
       "cycle_time_days": 3,
       "manual_start_date": null,

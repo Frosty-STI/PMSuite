@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Final
 
 LOCATIONS: Final[list[str]] = [
-    "USA",
+    "DAL",
     "FR-BIP",
     "MLA",
     "TIEMA",
@@ -21,7 +21,7 @@ LOCATIONS: Final[list[str]] = [
 ]
 
 LOCATION_DISPLAY: Final[dict[str, str]] = {
-    "USA": "USA",
+    "DAL": "Dallas, USA",
     "FR-BIP": "Freising, Germany",
     "MLA": "Kuala Lumpur, Malaysia",
     "TIEMA": "Melaka, Malaysia",
@@ -32,7 +32,7 @@ LOCATION_DISPLAY: Final[dict[str, str]] = {
 }
 
 DEFAULT_WORK_WEEKS: Final[dict[str, list[str]]] = {
-    "USA":    ["MON", "TUE", "WED", "THU", "FRI"],
+    "DAL":    ["MON", "TUE", "WED", "THU", "FRI"],
     "FR-BIP": ["MON", "TUE", "WED", "THU", "FRI"],
     "MLA":    ["SUN", "MON", "TUE", "WED", "THU"],
     "TIEMA":  ["SUN", "MON", "TUE", "WED", "THU"],
@@ -56,7 +56,7 @@ def seed_holidays(location: str, year_start: int, year_end: int) -> list[dict]:
         return []
 
     library_mapping = {
-        "USA":    lambda: _h.US(years=range(year_start, year_end + 1)),
+        "DAL":    lambda: _h.US(years=range(year_start, year_end + 1)),
         "FR-BIP": lambda: _h.Germany(subdiv="BY", years=range(year_start, year_end + 1)),
         "MLA":    lambda: _h.Malaysia(subdiv="KUL", years=range(year_start, year_end + 1)),
         "TIEMA":  lambda: _h.Malaysia(subdiv="MLK", years=range(year_start, year_end + 1)),

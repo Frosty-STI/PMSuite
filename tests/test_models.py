@@ -24,7 +24,7 @@ def test_task_dependency_string_shorthand_is_normalized():
     t = Task(
         id="TASK-002",
         name="Test",
-        completion_location="USA",
+        completion_location="DAL",
         calendar_mode="e_days",
         cycle_time_days=1,
         manual_start_date=date(2026, 5, 18),
@@ -40,7 +40,7 @@ def test_task_dependency_mixed_forms_are_normalized():
     t = Task(
         id="TASK-003",
         name="Test",
-        completion_location="USA",
+        completion_location="DAL",
         calendar_mode="e_days",
         cycle_time_days=1,
         manual_start_date=date(2026, 5, 18),

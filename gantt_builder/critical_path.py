@@ -25,6 +25,7 @@ from .models import Project, Task
 from .scheduler import (
     ScheduledTask,
     _add_days_in_calendar,
+    _dependency_start_floor,
     _subtract_days_in_calendar,
     _topological_order,
 )
@@ -125,9 +126,8 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
         )
         latest_start[task.id] = ls
 
-    # Total float = LS - computed_start (in calendar days). Critical = float == 0 and not complete.
+    # Total float = LS - computed_start (in calendar days). Reported for diagnostics.
     total_float: dict[str, int] = {}
-    critical: set[str] = set()
     for task in leaves:
         s = schedule.get(task.id)
         ls = latest_start.get(task.id)
@@ -136,8 +136,13 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
             continue
         tf = (ls - s.computed_start).days
         total_float[task.id] = max(0, tf)
-        if tf == 0 and not task.is_complete:
-            critical.add(task.id)
+
+    # "Critical" set is the LONG POLE: tasks on the gating chain from project end.
+    # Walks back from each terminal leaf, marking the predecessor(s) whose
+    # dependency-derived floor is the latest at each step. This is the
+    # user-visible "long pole" view (DESIGN.md Q15 / Q33 addendum) — distinct
+    # from strict CPM float==0, which working-day boundary snapping can disrupt.
+    critical: set[str] = _compute_long_pole(project, schedule)
 
     # Parents inherit critical status from any critical descendant
     parents = [t for t in project.tasks if project.has_subtasks(t.id)]
@@ -165,3 +170,68 @@ def compute_critical_path(project: Project, schedule: dict[str, ScheduledTask]) 
         latest_start=latest_start,
         latest_finish=latest_finish,
     )
+
+
+def _compute_long_pole(project: Project, schedule: dict[str, ScheduledTask]) -> set[str]:
+    """Identify tasks on the gating chain — the "long pole" view.
+
+    For each task in the project, the GATING predecessor is the one whose
+    dependency-derived floor on the successor's start is the latest (the
+    one whose finish/start dictates when the successor can begin). The long
+    pole is the transitive closure of gating predecessors walking back from
+    each terminal leaf.
+
+    Why this exists alongside total_float: strict CPM critical (float==0)
+    is mathematically defensible but visually unstable when working-day
+    boundary snapping introduces 1-day float bumps. Users tracking the
+    "long pole" want a stable, intuitive answer: the chain of tasks that
+    drove the project end date.
+    """
+    if not schedule:
+        return set()
+
+    project_end = max(s.effective_finish for s in schedule.values())
+    leaf_index = {t.id: t for t in project.tasks if not project.has_subtasks(t.id)}
+
+    long_pole: set[str] = set()
+    queue: list[Task] = []
+
+    # Seed with terminal leaves: leaves whose effective_finish equals project_end.
+    # Completed tasks excluded (their effective_finish is fixed and they can no longer slip).
+    for t in leaf_index.values():
+        s = schedule.get(t.id)
+        if s and s.effective_finish == project_end and not t.is_complete:
+            long_pole.add(t.id)
+            queue.append(t)
+
+    visited: set[str] = set()
+    while queue:
+        task = queue.pop()
+        if task.id in visited:
+            continue
+        visited.add(task.id)
+
+        # Compute the dep-derived floor each leaf predecessor imposes on this task.
+        floors: dict[str, object] = {}
+        for dep in task.dependencies:
+            pred_sched = schedule.get(dep.id)
+            if pred_sched is None or dep.id not in leaf_index:
+                continue
+            try:
+                floors[dep.id] = _dependency_start_floor(task, dep, pred_sched, project)
+            except Exception:
+                continue
+
+        if not floors:
+            continue
+
+        max_floor = max(floors.values())
+        for pred_id, floor in floors.items():
+            if floor == max_floor:
+                pred_task = leaf_index.get(pred_id)
+                if pred_task and not pred_task.is_complete:
+                    long_pole.add(pred_id)
+                    if pred_id not in visited:
+                        queue.append(pred_task)
+
+    return long_pole
