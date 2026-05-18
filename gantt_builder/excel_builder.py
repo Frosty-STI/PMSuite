@@ -245,11 +245,11 @@ def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
 def _set_metadata_column_widths(sheet) -> None:
     """Width spec for the frozen metadata block."""
     sheet.set_column(0, 0, 12)   # TASK ID
-    sheet.set_column(1, 1, 36)   # Name
-    sheet.set_column(2, 2, 12)   # Location
-    sheet.set_column(3, 3, 18)   # Cycle Time (Days)
-    sheet.set_column(4, 5, 16)   # Baseline Start / Baseline Finish
-    sheet.set_column(6, 6, 22)   # Dependencies (numerical IDs)
+    sheet.set_column(1, 1, 28)   # Name
+    sheet.set_column(2, 2, 10)   # Location
+    sheet.set_column(3, 3, 8)    # Cycle Time (Days)
+    sheet.set_column(4, 5, 13)   # Baseline Start / Baseline Finish
+    sheet.set_column(6, 6, 14)   # Dependencies (numerical IDs)
 
 
 def _gantt_task_order(project: Project, schedule: dict[str, ScheduledTask]) -> list:
@@ -351,7 +351,7 @@ def _build_day_view(workbook, project: Project, schedule, critical_path, formats
 
     sheet.set_row(0, 90)  # tall header for multi-line date + holiday text
     _set_metadata_column_widths(sheet)
-    sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 4)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     # -- Task rows --
@@ -469,7 +469,7 @@ def _build_week_view(workbook, project: Project, schedule, critical_path, format
 
     sheet.set_row(0, 42)
     _set_metadata_column_widths(sheet)
-    sheet.set_column(_METADATA_COL_COUNT, col - 1, 16)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     for row_idx, task in enumerate(_gantt_task_order(project, schedule), start=1):

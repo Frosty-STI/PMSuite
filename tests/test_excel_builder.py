@@ -109,3 +109,22 @@ def test_chart_key_documents_row_order_and_has_wide_wrapped_columns(tmp_path: Pa
     assert sheet.column_dimensions["A"].width >= 26
     assert sheet.column_dimensions["B"].width >= 36
     assert sheet.column_dimensions["C"].width >= 118
+
+
+def test_day_and_week_views_keep_compact_timeline_columns(tmp_path: Path):
+    project = _project([_task("TASK-001", date(2026, 5, 18))])
+
+    output = api.build_excel(project, output_dir=tmp_path)
+
+    openpyxl = __import__("openpyxl")
+    wb = openpyxl.load_workbook(str(output))
+    try:
+        day = wb["Day View"]
+        week = wb["Week View"]
+
+        assert 28 <= day.column_dimensions["B"].width < 29
+        assert 4 <= day.column_dimensions["H"].width < 5
+        assert 28 <= week.column_dimensions["B"].width < 29
+        assert 12 <= week.column_dimensions["H"].width < 13
+    finally:
+        wb.close()
