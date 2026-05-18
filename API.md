@@ -154,6 +154,8 @@ output_path = api.build_excel(project, output_dir="custom/output/dir")
 
 For the full Excel output specification, see [EXCELBUILDER.md](EXCELBUILDER.md). The workbook currently contains Chart Key & Info, Day View, Week View, Schedule Calculations, and Critical Path Notes.
 
+Day View and Week View rows are rendered in chronological schedule order. Stable `TASK-NNN` IDs are not renumbered and do not imply row position.
+
 ---
 
 ## Error envelope

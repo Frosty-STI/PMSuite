@@ -57,6 +57,10 @@ end_axis   = ceil_to_sunday (max(latest_effective_finish, today) + 14 days)
 
 Day View has one column per day across this span; Week View has one column per Monday-to-Sunday week across the same span. The user scrolls horizontally to navigate.
 
+## Gantt row order
+
+Day View and Week View rows are sorted chronologically by the scheduled task dates, not by task ID or JSON insertion order. The primary sort is `computed_start`; ties keep parent rows above children, then use finish dates and stable ID tie-breakers. Task IDs remain stable creation identifiers: if a user creates `TASK-013` and its computed schedule belongs between `TASK-009` and `TASK-010`, the Gantt views display it between those rows while keeping the ID `TASK-013`.
+
 ## Frozen panes
 
 Both Day View and Week View freeze:
@@ -113,6 +117,8 @@ Color:    blue blue blue blue blue oran oran red
 
 For each task row, iterate the date columns and apply the segmented color rules above. Holiday and weekend shading apply per-row when the task's `completion_location` would otherwise be in working state on that date (or for e-day tasks, when the day is a holiday of the task's location).
 
+Rows are rendered in chronological schedule order. Task ID order is intentionally not used for row placement.
+
 ## Sheet 2 — Week View
 
 ### Columns
@@ -127,6 +133,8 @@ For each task row, iterate the date columns and apply the segmented color rules 
 Each week column represents Mon–Sun. A task overlapping any day in the week gets that week colored.
 
 **No per-location work-week aggregation** — column headers are USA-anchored Monday dates regardless of which location's tasks are in the row. This was Option C from the Q19 grilling; it avoids per-location duplicate sheets.
+
+Rows use the same chronological schedule order as Day View.
 
 ## Sheet 3 — Schedule Calculations
 

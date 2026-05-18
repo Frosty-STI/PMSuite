@@ -43,10 +43,12 @@ On first run, the app creates a `projects/` directory. Use the sidebar to:
 JSON project file  →  Python loader/validator
                   →  Scheduling engine (calendar math, dependency cascade, delay propagation)
                   →  Excel builder (xlsxwriter)
-                  →  Generated workbook with Day View, Week View, Schedule Calculations, Critical Path Notes
+                  →  Generated workbook with Chart Key & Info, Day View, Week View, Schedule Calculations, Critical Path Notes
 ```
 
 The scheduler resolves per-task calendar modes (working days vs e-days), per-task completion locations (DAL, MLA, CLARK, TAI, TIPI, TIEMA, FR-BIP, AIZU), holiday partitioning, parent/subtask rollups, parent-aware scheduling floors, and rich finish-to-start / start-to-start / finish-to-finish / start-to-finish dependencies with predecessor-calendar lag.
+
+The Excel Day View and Week View sort rows chronologically by computed schedule dates. Task IDs remain stable creation identifiers, so a later-created task can appear earlier in the Gantt if its dates belong there.
 
 ## Your data is local
 

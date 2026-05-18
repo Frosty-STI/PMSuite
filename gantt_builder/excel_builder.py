@@ -1,13 +1,14 @@
 """Excel workbook generation via xlsxwriter (full Option E rendering).
 
-Produces a 4-sheet workbook:
+Produces a 5-sheet workbook:
+  - Chart Key & Info         — legend and workbook-reading guide
   - Day View                 — segmented colored cell bars, per-day resolution
   - Week View                — same span, weekly aggregation
   - Schedule Calculations    — auditable per-task table
   - Critical Path Notes      — risk/timing dashboard
 
 Bar segments per Option E:
-  - Planned (incomplete)    : muted blue
+  - Planned (incomplete)    : pale blue
   - Completed (full bar)    : green
   - Delay extension         : orange (computed_finish < d <= effective_finish)
   - Overdue tail            : red    (today > effective_finish, incomplete)
@@ -17,13 +18,17 @@ Bar segments per Option E:
                               own non-working days INSIDE the bar range)
   - Parent summary          : dark gray with cap borders
 
+Gantt row ordering:
+  - Day View and Week View sort rows chronologically by computed schedule dates.
+    Task IDs remain stable identifiers and do not imply display order.
+
 Column header styling:
   - Today column      : yellow fill
-  - USA weekend       : light gray
+  - Weekend           : light gray
   - Holiday (any loc) : darker gray + holiday name appended
 
 Frozen-pane metadata columns: TASK ID, Name, Location, Cycle Time (Days),
-Baseline Start, Baseline Finish.
+Baseline Start, Baseline Finish, Dependencies.
 """
 
 from __future__ import annotations
@@ -130,8 +135,12 @@ def _build_formats(workbook) -> dict:
     formats["header_holiday"] = workbook.add_format({**base_header, "bg_color": _C_HOLIDAY})
 
     # -- Task metadata cells -------------------------------------------
-    formats["task_id"]   = workbook.add_format({"font_name": "Consolas", "border": 1})
-    formats["task_name"] = workbook.add_format({"border": 1})
+    formats["task_id"] = workbook.add_format({
+        "font_name": "Consolas", "border": 1, "text_wrap": True, "valign": "top",
+    })
+    formats["task_name"] = workbook.add_format({
+        "border": 1, "text_wrap": True, "valign": "top",
+    })
 
     # -- Body cell formats (one per status × critical × today combination) -
     body_status_fills = {
@@ -177,7 +186,9 @@ def _build_formats(workbook) -> dict:
     })
 
     # -- Critical Path Notes / Schedule Calculations helpers -----------
-    formats["summary_label"] = workbook.add_format({"bold": True})
+    formats["summary_label"] = workbook.add_format({"bold": True, "text_wrap": True, "valign": "top"})
+    formats["summary_value"] = workbook.add_format({"text_wrap": True, "valign": "top"})
+    formats["calc_cell"] = workbook.add_format({"text_wrap": True, "valign": "top"})
 
     return formats
 
@@ -234,17 +245,55 @@ def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
 def _set_metadata_column_widths(sheet) -> None:
     """Width spec for the frozen metadata block."""
     sheet.set_column(0, 0, 12)   # TASK ID
-    sheet.set_column(1, 1, 28)   # Name
-    sheet.set_column(2, 2, 10)   # Location
-    sheet.set_column(3, 3, 8)    # Cycle Time (Days)
-    sheet.set_column(4, 5, 13)   # Baseline Start / Baseline Finish
-    sheet.set_column(6, 6, 14)   # Dependencies (numerical IDs)
+    sheet.set_column(1, 1, 36)   # Name
+    sheet.set_column(2, 2, 12)   # Location
+    sheet.set_column(3, 3, 18)   # Cycle Time (Days)
+    sheet.set_column(4, 5, 16)   # Baseline Start / Baseline Finish
+    sheet.set_column(6, 6, 22)   # Dependencies (numerical IDs)
+
+
+def _gantt_task_order(project: Project, schedule: dict[str, ScheduledTask]) -> list:
+    """Tasks in user-facing Gantt row order.
+
+    Row order follows chronology, not ID creation order. A later-created task
+    keeps its stable ID but appears wherever its scheduled dates belong.
+    """
+    original_index = {task.id: idx for idx, task in enumerate(project.tasks)}
+
+    def task_number(task_id: str) -> int:
+        try:
+            return int(task_id.split("-")[-1])
+        except ValueError:
+            return 999_999
+
+    def sort_key(task):
+        s = schedule.get(task.id)
+        if s is None:
+            return (
+                date.max,
+                _hierarchy_level(project, task.id),
+                date.max,
+                date.max,
+                task_number(task.id),
+                task.id,
+            )
+        return (
+            s.computed_start,
+            _hierarchy_level(project, task.id),
+            s.effective_finish,
+            s.computed_finish,
+            task_number(task.id),
+            original_index.get(task.id, 999_999),
+            task.id,
+        )
+
+    return sorted(project.tasks, key=sort_key)
 
 
 def _build_holiday_name_map(project: Project) -> dict[date, str]:
     """For each holiday date, build a summary string spanning all locations.
 
-    Format: "Independence Day (USA); Eid (MLA, TIEMA)"
+    Format: "Independence Day (DAL); Eid (MLA, TIEMA)"
     """
     by_date: dict[date, dict[str, list[str]]] = {}
     for loc, entries in project.settings.holidays.items():
@@ -300,13 +349,14 @@ def _build_day_view(workbook, project: Project, schedule, critical_path, formats
         current += timedelta(days=1)
         col += 1
 
-    sheet.set_row(0, 60)  # tall header for multi-line text
+    sheet.set_row(0, 90)  # tall header for multi-line date + holiday text
     _set_metadata_column_widths(sheet)
-    sheet.set_column(_METADATA_COL_COUNT, col - 1, 4)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
     # -- Task rows --
-    for row_idx, task in enumerate(project.tasks, start=1):
+    for row_idx, task in enumerate(_gantt_task_order(project, schedule), start=1):
+        sheet.set_row(row_idx, 30)
         _write_task_metadata_row(sheet, row_idx, task, formats)
         s = schedule.get(task.id)
         if not s:
@@ -417,12 +467,13 @@ def _build_week_view(workbook, project: Project, schedule, critical_path, format
         current += timedelta(days=7)
         col += 1
 
-    sheet.set_row(0, 35)
+    sheet.set_row(0, 42)
     _set_metadata_column_widths(sheet)
-    sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
+    sheet.set_column(_METADATA_COL_COUNT, col - 1, 16)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
 
-    for row_idx, task in enumerate(project.tasks, start=1):
+    for row_idx, task in enumerate(_gantt_task_order(project, schedule), start=1):
+        sheet.set_row(row_idx, 30)
         _write_task_metadata_row(sheet, row_idx, task, formats)
         s = schedule.get(task.id)
         if not s:
@@ -518,9 +569,14 @@ def _build_schedule_calculations(workbook, project, schedule, critical_path, for
         sheet.write(row_idx, 21, "")
 
     sheet.freeze_panes(1, 2)
-    sheet.set_column(0, 0, 12)
-    sheet.set_column(1, 1, 28)
-    sheet.set_column(2, len(columns) - 1, 14)
+    schedule_widths = [
+        12, 36, 16, 12, 12, 16, 18, 18, 16, 16, 16, 16,
+        12, 16, 22, 12, 34, 12, 12, 20, 18, 34,
+    ]
+    for col, width in enumerate(schedule_widths):
+        sheet.set_column(col, col, width, formats["calc_cell"])
+    for row_idx in range(1, len(project.tasks) + 1):
+        sheet.set_row(row_idx, 24)
 
 
 # -------------------------------------------------------------------------
@@ -547,10 +603,11 @@ def _build_critical_path_notes(workbook, project, schedule, critical_path, forma
     ]
     for row_idx, (label, value) in enumerate(rows):
         sheet.write(row_idx, 0, label, formats["summary_label"] if label else None)
-        sheet.write(row_idx, 1, value)
+        sheet.write(row_idx, 1, value, formats["summary_value"])
+        sheet.set_row(row_idx, 24)
 
     sheet.set_column(0, 0, 28)
-    sheet.set_column(1, 1, 80)
+    sheet.set_column(1, 1, 110)
 
 
 def _build_summary(project, schedule, critical_path, overdue, delayed) -> str:
@@ -573,21 +630,26 @@ def _build_chart_key_info(workbook, project: Project, formats) -> None:
 
     title_fmt = workbook.add_format({
         "bold": True, "font_size": 14, "align": "left", "valign": "vcenter",
+        "text_wrap": True,
     })
     section_fmt = workbook.add_format({
         "bold": True, "font_size": 11, "bg_color": _C_HEADER,
-        "border": 1, "align": "left",
+        "border": 1, "align": "left", "valign": "vcenter", "text_wrap": True,
     })
-    body_fmt = workbook.add_format({"border": 1, "align": "left", "valign": "vcenter"})
-    body_bold_fmt = workbook.add_format({"border": 1, "align": "left", "bold": True})
+    body_fmt = workbook.add_format({
+        "border": 1, "align": "left", "valign": "top", "text_wrap": True,
+    })
+    body_bold_fmt = workbook.add_format({
+        "border": 1, "align": "left", "valign": "top", "bold": True, "text_wrap": True,
+    })
 
-    sheet.set_column(0, 0, 22)   # Sample / Code
-    sheet.set_column(1, 1, 28)   # Site / Color
-    sheet.set_column(2, 2, 70)   # Description
+    sheet.set_column(0, 0, 26)    # Sample / Code
+    sheet.set_column(1, 1, 36)    # Site / Color
+    sheet.set_column(2, 2, 118)   # Description
 
     row = 0
     sheet.set_row(row, 25)
-    sheet.write(row, 0, "PMSuite Gantt Chart — Key & Info", title_fmt)
+    sheet.merge_range(row, 0, row, 2, "PMSuite Gantt Chart — Key & Info", title_fmt)
     row += 2
 
     # -- Working Weeks by Location ---------------------------------------
@@ -623,7 +685,7 @@ def _build_chart_key_info(workbook, project: Project, formats) -> None:
     row += 1
 
     legend = [
-        ("planned",   "Planned (muted blue)",
+        ("planned",   "Planned (pale blue)",
          "An in-progress task during its scheduled cycle (computed_start to computed_finish)."),
         ("completed", "Completed (green)",
          "A task marked is_complete. The entire bar shows as completed regardless of segment."),
@@ -667,6 +729,21 @@ def _build_chart_key_info(workbook, project: Project, formats) -> None:
                 "dependency graph is marked.",
                 body_fmt)
     sheet.set_row(row, 60)
+    row += 2
+
+    # -- Task row order --------------------------------------------------
+    sheet.merge_range(row, 0, row, 2, "Task Row Order", section_fmt)
+    row += 1
+    sheet.write(row, 0, "Day / Week View rows", body_bold_fmt)
+    sheet.write(row, 1, "Chronological", body_fmt)
+    sheet.write(
+        row, 2,
+        "Rows in the Day View and Week View are sorted by scheduled start and finish dates, "
+        "not by task ID. Task IDs remain stable creation identifiers: a later-created TASK-013 "
+        "can appear between TASK-009 and TASK-010 when its computed schedule belongs there.",
+        body_fmt,
+    )
+    sheet.set_row(row, 48)
     row += 2
 
     # -- Reading the frozen pane -----------------------------------------

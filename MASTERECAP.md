@@ -493,6 +493,16 @@ Real holidays push working-day task dates, exercise the holiday rendering in Exc
 
 ---
 
+## Q35 — Chronological Gantt row order
+
+**Decision:** Day View and Week View rows sort chronologically by scheduled dates, not by task ID or JSON insertion order. Task IDs remain stable creation identifiers and are never renumbered for display.
+
+**Example:** If a user creates `TASK-013` and its computed schedule belongs between `TASK-009` and `TASK-010`, the Gantt views display it between those tasks while keeping the ID `TASK-013`.
+
+**Why:** The Excel Gantt is a timeline-first artifact. Chronological row order makes the workbook easier to scan without sacrificing stable IDs for dependencies, audit history, and references.
+
+---
+
 ## Cross-references
 
 - [DESIGN.md](DESIGN.md) — architecture-level rationale, organized by topic.

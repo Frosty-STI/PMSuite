@@ -20,7 +20,7 @@ Latest commits (most recent first):
 | `b7c357d` | doc  | Initial comprehensive documentation (HANDOFF, MASTERECAP, etc.) |
 | `10a294d` | 0    | Walking-skeleton scaffold |
 
-**82/82 tests passing** (`pytest -q` ~0.5 sec). The end-to-end pipeline plus delay/completion/baseline/dependency/critical-path/validation/Excel structural workflows are functional.
+**84/84 tests passing** (`pytest -q` ~0.6 sec). The end-to-end pipeline plus delay/completion/baseline/dependency/critical-path/validation/Excel structural workflows are functional.
 
 ## What works today
 
@@ -44,6 +44,7 @@ Latest commits (most recent first):
   - Critical-path dark-red stripe via top/bottom border.
   - Today vertical line (thick black left border on every body cell in today's column).
   - Multi-line date column headers with weekday, date, and holiday name(s) per location.
+  - Day View / Week View rows sort chronologically by scheduled dates, while TASK IDs remain stable creation identifiers.
   - Per-row weekend/holiday "gap" shading for working-day tasks.
   - E-day tasks render continuous through weekends and holidays.
   - Parent summary bars in dark gray with critical inheritance.
@@ -92,7 +93,7 @@ examples/
                          DAL / MLA / TAI / FR-BIP / AIZU
 ```
 
-82 tests total. All passing.
+84 tests total. All passing.
 
 ## Latest demo workbooks (locally; gitignored)
 
@@ -202,7 +203,7 @@ C:\Users\Frosty\PMsuite\          # local clone; pushed to https://github.com/Fr
 │   ├── scheduler.py
 │   └── validation.py
 ├── ui/streamlit_app.py
-├── tests/                        # 11 test files, 82 tests passing
+├── tests/                        # 11 test files, 84 tests passing
 ├── examples/                     # both demos have real holidays + baseline
 ├── output/                       # gitignored generated Excel files
 └── .logs/gantt_builder.log

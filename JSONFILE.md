@@ -133,7 +133,7 @@ Each entry is a task. Tasks reference each other by ID for dependencies and pare
 
 | Field                    | Type                                     | Required | Default | Notes |
 |--------------------------|------------------------------------------|----------|---------|-------|
-| `id`                     | string                                   | yes      | —       | System-generated `TASK-NNN`. Never user-edited. Sequential, gaps allowed, never reused. |
+| `id`                     | string                                   | yes      | —       | System-generated `TASK-NNN`. Never user-edited. Sequential, gaps allowed, never reused. Does not control Excel Gantt row order; Day View / Week View rows sort chronologically by scheduled dates. |
 | `name`                   | string                                   | yes      | —       | User-provided. May change without breaking dependencies (IDs are stable). |
 | `completion_location`    | enum                                     | yes      | —       | One of: `DAL`, `FR-BIP`, `MLA`, `TIEMA`, `CLARK`, `TIPI`, `TAI`, `AIZU`. |
 | `calendar_mode`          | `"working_days" \| "e_days"`             | yes      | —       | `e_days` counts every calendar day (e.g., oven cycles). `working_days` counts only the location's working-week minus its holidays. |

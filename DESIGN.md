@@ -251,6 +251,10 @@ output/gantt_<project_id>_<YYYY-MM-DD>_<HHMMSS>.xlsx
 
 Frozen panes: task metadata columns frozen left, date header row frozen top. The full date range is rendered (no compression); user scrolls horizontally.
 
+### 14.3.1 Gantt row order
+
+Day View and Week View display tasks in chronological schedule order, not ID order or JSON insertion order. Task IDs are stable creation identifiers and are never renumbered for display. For example, a later-created `TASK-013` appears between `TASK-009` and `TASK-010` when its computed schedule dates fall between those tasks.
+
 ### 14.4 Bar rendering (Option E — segmented cell coloring)
 
 - **Planned** (incomplete): pale blue (`#8FB6E1`).
