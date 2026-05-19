@@ -26,6 +26,10 @@ dev = [
     "pytest>=7.4",
     "openpyxl>=3.1",
 ]
+test-ui = [
+    "pytest>=7.4",
+    "pytest-playwright>=0.4",
+]
 # pytest-benchmark added back when test_performance.py is implemented
 
 [tool.hatch.build.targets.wheel]
@@ -36,5 +40,6 @@ testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "visual: opt-in visual snapshot tests for Excel output",
+    "playwright: Playwright UI tests requiring Chromium (deselect with '-m \"not playwright\"')",
 ]
 addopts = "-ra"

@@ -81,7 +81,8 @@ Latest commits (most recent first):
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 7 | Pending | **Playwright UI verification** -- automated browser tests for the Streamlit app covering the current Step 6 editing surface. Screen out bugs before adding feature complexity. Covers golden-path flows: load project, add/edit/delete task, add/remove dependency, mark complete, save, validate, build Excel, set baseline, auto-catchup, new project creation, dirty-state badge, project switching. Test file: `tests/test_streamlit_playwright.py`. Requires `pip install playwright && playwright install chromium`. |
+| 7 | In progress | **Playwright UI verification** -- 23 tests written across 10 classes covering 18 golden-path flows. Automatic screenshot-on-failure saves PNGs to `test-results/screenshots/`. Helpers in `tests/playwright_helpers.py`, tests in `tests/test_streamlit_playwright.py`, fixture in `tests/fixtures/npde_playwright_test_fixture.json`, design doc in `PLAYWRIGHT_SCREENING.md`. Selectors rewritten after first run; **full green run not yet confirmed** -- next agent must run suite, debug remaining failures, and commit once stable. See `PLAYWRIGHT_SCREENING.md` for full coverage table and known gaps. |
+| 7a | Pending | **UI: "Complete?" checkbox on collapsed task expanders** -- move the completion indicator from inside the task expander ("Is Complete" checkbox) to an inline "Complete?" checkbox visible on each collapsed task row (far right, aligned with task name). The existing `Is Complete` checkbox inside the expander should remain for editing; this adds read-at-a-glance visibility without opening each task. Update `mark_task_complete` helper in `playwright_helpers.py` and add a Playwright test for the new UI element. |
 | 8 | Pending | **Holiday editor page** -- dedicated Streamlit route, tabbed by location, table of {date, name, source} with add/edit/delete, "Re-seed from library" with diff preview. |
 | 9 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
 | 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
@@ -99,6 +100,7 @@ C:\Users\Frosty\PMSuite\
 ├── JSONFILE.md                       # JSON schema reference
 ├── EXCELBUILDER.md                   # Excel output spec
 ├── STREAMLIT.md                      # UI spec
+├── PLAYWRIGHT_SCREENING.md           # Playwright test design decisions & coverage
 ├── README.md
 ├── LICENSE                           # MIT
 ├── pyproject.toml
@@ -123,7 +125,11 @@ C:\Users\Frosty\PMSuite\
 ├── ui/
 │   ├── __init__.py
 │   └── streamlit_app.py              # full editing surface (Step 6)
-├── tests/                            # 12 test files, 95 tests passing
+├── tests/                            # 12 backend test files (95 tests) + 2 Playwright files (23 tests)
+│   ├── fixtures/
+│   │   └── npde_playwright_test_fixture.json  # Playwright test fixture (past/future dates)
+│   ├── playwright_helpers.py         # composable async helpers for Playwright tests
+│   ├── test_streamlit_playwright.py  # 23 Playwright UI tests (10 classes, 18 flows)
 │   ├── test_api.py                   # end-to-end pipeline
 │   ├── test_baseline.py              # 5 tests
 │   ├── test_completion.py            # 15 tests

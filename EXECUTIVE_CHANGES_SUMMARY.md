@@ -204,7 +204,7 @@ Moved Playwright UI verification from Step 10 to Step 7 in the HANDOFF.md roadma
 
 ---
 
-## Push 18 -- (pending) -- 2026-05-18
+## Push 18 -- `228bf7e` -- 2026-05-18
 
 **UI polish pass: save state indicators, button layout, beforeunload fix, HANDOFF hardening**
 
@@ -221,3 +221,42 @@ Documentation changes:
 - EXECUTIVE_CHANGES_SUMMARY.md: backfilled push 16 and 17 hashes, added this entry.
 
 **Why:** The user's design principle is to be as friendly to the user as possible — explaining how the tool works without getting in the way. The save state indicator gives instant visual feedback. The button layout fix keeps the UI clean. The beforeunload fix eliminates a confusing dialog on the safest action (Save). The HANDOFF hardening ensures no future agent skips the executive changelog.
+
+---
+
+## Push 19 -- (pending) -- 2026-05-18
+
+**Step 7: Playwright UI verification suite (in progress) + documentation updates**
+
+Playwright test infrastructure:
+- Created `tests/fixtures/npde_playwright_test_fixture.json` — copy of npde_demo.json with dates shifted to provide both past (2025) and future (post-9/18/2026) tasks. TASK-003 left incomplete/overdue to trigger auto-catchup. TASK-014 "Filler task" bridges 438 e_days.
+- Created `tests/playwright_helpers.py` — 30+ composable async helpers for all UI interactions (server lifecycle, page navigation, task CRUD, dependency management, action buttons, auto-catchup, project management, settings, assertions).
+- Created `tests/test_streamlit_playwright.py` — 23 tests across 10 classes covering 18 golden-path flows: showcase, load project, add/edit/delete task, delete-blocked, add/remove dependency, mark complete, validate (clean + errors), save + dirty state, build Excel, set baseline, auto-catchup apply/undo/skip, new project creation, project switching (cancel/discard/save), manual start toggle, settings (auto-delay, snapshots).
+- Created `PLAYWRIGHT_SCREENING.md` — design decisions from 17-question grilling session, current coverage table with assertion depth per test, known coverage gaps, stabilization status, running commands.
+- Updated `pyproject.toml` — added `test-ui` optional dependency group (`pytest-playwright>=0.4`), added `playwright` pytest marker.
+
+Documentation updates:
+- Updated HANDOFF.md: Step 7 marked as "In progress" with description of what's written vs. what needs verification. Added Step 7a for the "Complete?" checkbox UI change. Updated local layout to include new Playwright files.
+- Updated PLAYWRIGHT_SCREENING.md: added full coverage table, known gaps section, stabilization status.
+
+Post-initial-write hardening:
+- Added automatic screenshot-on-failure: `page_and_project` fixture uses `pytest_runtest_makereport` hook to detect failures and save PNGs; standalone tests (Showcase, AutoCatchup, NewProject) use try/except wrappers. Screenshots saved to `test-results/screenshots/` (gitignored).
+- Fixed `test_build_excel` assertion depth: now verifies a new `.xlsx` file was created on disk using `find_latest_excel()`, not just checking for UI alerts.
+- Updated `.gitignore` with `test-results/` exclusion.
+
+**Stabilization note:** First test run was 3/23 passing due to selector/timing mismatches with Streamlit's DOM. Helpers were rewritten to target correct elements (`<summary>` for expanders, `data-testid` attributes, auto-catchup dismissal). A full green run has **not yet been confirmed** — the next agent must run the suite and debug remaining failures before committing as complete.
+
+**Why:** The user's philosophy is to screen out bugs before adding feature complexity. The Playwright suite verifies the full round-trip (click → session state → JSON on disk → reload) for every editing flow in the Step 6 UI. Writing tests before the holiday editor ensures a stable foundation.
+
+---
+
+## Pending for next session: Step 7a — "Complete?" checkbox on collapsed task rows
+
+**What to implement:**
+- Add a read-only "Complete?" checkbox (or equivalent visual indicator) to each collapsed task expander row in `ui/streamlit_app.py`. It should appear on the far right of the task name line, inline with the collapsed `<summary>` content.
+- The checkbox should reflect `task.is_complete` state. It is a **display-only** indicator on the collapsed row — the existing "Is Complete" checkbox inside the expanded editor remains the edit control.
+- The purpose is at-a-glance visibility: users can see which tasks are complete without opening each expander.
+- Update the `mark_task_complete` Playwright helper and add a test verifying the checkbox appears and reflects state after marking a task complete.
+- Consider Streamlit's rerun model — the checkbox state must survive reruns and reflect session-state changes immediately.
+
+**Why:** The user wants additional visibility into task completion status without requiring interaction (opening expanders). This aligns with the "friendly to the user" design principle from Push 18.
