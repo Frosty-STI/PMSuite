@@ -180,7 +180,7 @@ New `editing.py` module with `add_task` (auto-generates next TASK-NNN ID, advanc
 
 ---
 
-## Push 16 -- (pending) -- 2026-05-17
+## Push 16 -- `6348aca` -- 2026-05-17
 
 **Step 6: Streamlit editing surface, New Here? walkthrough, button descriptions**
 
@@ -191,3 +191,33 @@ Added concise descriptions under each action button (Validate, Save, Build Excel
 Created `EXECUTIVE_CHANGES_SUMMARY.md` with backfilled entries for all prior commits. Updated HANDOFF.md roadmap with Step 10 (Playwright UI verification) and Step 11 (Final Walkthrough Refresh).
 
 **Why:** Step 6 is the transition from "backend tool" to "usable application." Without an editing surface, users must hand-edit JSON -- which defeats the purpose of building a UI. The walkthrough ensures first-time users can orient themselves without reading 6 documentation files. Button descriptions reduce the "what does this do?" friction for non-technical users.
+
+---
+
+## Push 17 -- `b9dee2b` -- 2026-05-18
+
+**Reorder roadmap: Playwright verification before holiday editor**
+
+Moved Playwright UI verification from Step 10 to Step 7 in the HANDOFF.md roadmap. Holiday editor, demo expansion, and test backfill shift to Steps 8-10. Step 11 (Final Walkthrough Refresh) unchanged.
+
+**Why:** Screen out bugs in the Step 6 editing surface before adding feature complexity. The user's philosophy is to iron out issues before passing to users, not to have users discover bugs. Running Playwright against the current UI before the holiday editor ensures a stable foundation for future features.
+
+---
+
+## Push 18 -- (pending) -- 2026-05-18
+
+**UI polish pass: save state indicators, button layout, beforeunload fix, HANDOFF hardening**
+
+Streamlit UI changes:
+- Capitalized "Timezone" in the project subtitle.
+- Restructured action buttons: buttons render in one row (all level), descriptions render in a second row below. This fixes the Set Baseline button being pushed down by its longer caption text.
+- Updated Set Baseline description to "Record each task's current scheduled start and finish as the original baseline dates."
+- After clicking Set Baseline, explanatory text appears below the button row describing what happened, plus descriptions of the Auto-delay and Keep Local Snapshots sidebar settings.
+- Added save state indicator below the button row: orange italic "Unsaved changes" when dirty, green italic "All changes saved" when clean. Removed the old "* Unsaved changes" title badge.
+- Fixed `beforeunload` dialog firing on Save click. Introduced a `_pmsuiteAllowReload` JavaScript flag on the parent window: the beforeunload handler checks this flag and allows navigation silently when set. Save, Cancel, Discard & Switch, and Save & Switch all set the flag before calling `st.rerun()`. Tab close and manual navigation still trigger the warning dialog.
+
+Documentation changes:
+- HANDOFF.md: strengthened the EXECUTIVE_CHANGES_SUMMARY.md update requirement from a bullet point to a mandatory, explicit instruction for all agents.
+- EXECUTIVE_CHANGES_SUMMARY.md: backfilled push 16 and 17 hashes, added this entry.
+
+**Why:** The user's design principle is to be as friendly to the user as possible — explaining how the tool works without getting in the way. The save state indicator gives instant visual feedback. The button layout fix keeps the UI clean. The beforeunload fix eliminates a confusing dialog on the safest action (Save). The HANDOFF hardening ensures no future agent skips the executive changelog.

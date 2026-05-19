@@ -173,7 +173,7 @@ C:\Users\Frosty\PMSuite\
 - **Pydantic v2 model serialization** uses `model_dump(mode="json", exclude_defaults=False, exclude_none=False)` for canonical output. Every save updates `project.updated_at` automatically.
 - **Demo project files get rewritten** when run through save_project -- this is intentional (canonical formatting + updated_at). Don't revert.
 - **Color palette is locked** at MASTERECAP Q26a values. Don't redecorate without an explicit user ask.
-- **Update EXECUTIVE_CHANGES_SUMMARY.md** with every push to GitHub.
+- **MANDATORY: Update EXECUTIVE_CHANGES_SUMMARY.md with every push to GitHub.** Every commit that gets pushed must have a corresponding entry in `EXECUTIVE_CHANGES_SUMMARY.md` documenting what changed and why. Use the same format as existing entries: `## Push N -- hash -- date`, followed by a bold title, detailed explanation, and a "Why" paragraph. This is a non-negotiable requirement -- do not push without updating this file.
 
 ## Tone the user expects
 

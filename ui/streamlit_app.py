@@ -67,7 +67,12 @@ def _inject_beforeunload(dirty: bool) -> None:
     if dirty:
         st.components.v1.html(
             """<script>
-            window.onbeforeunload = function() {
+            window.parent._pmsuiteAllowReload = window.parent._pmsuiteAllowReload || false;
+            window.parent.onbeforeunload = function() {
+                if (window.parent._pmsuiteAllowReload) {
+                    window.parent._pmsuiteAllowReload = false;
+                    return undefined;
+                }
                 return "You have unsaved changes that will be lost.";
             };
             </script>""",
@@ -75,9 +80,18 @@ def _inject_beforeunload(dirty: bool) -> None:
         )
     else:
         st.components.v1.html(
-            "<script>window.onbeforeunload = null;</script>",
+            "<script>window.parent.onbeforeunload = null;</script>",
             height=0,
         )
+
+
+def _allow_rerun() -> None:
+    st.components.v1.html(
+        "<script>window.parent._pmsuiteAllowReload = true;</script>",
+        height=0,
+    )
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -623,10 +637,10 @@ def _render_add_task(project: Project) -> None:
 # ---------------------------------------------------------------------------
 
 def _render_action_buttons(project: Project, path: Path) -> None:
+    # --- Button row (all level) ---
     col_validate, col_save, col_build, col_baseline = st.columns(4)
 
     with col_validate:
-        st.caption("Check for errors (circular deps, missing data, etc.)")
         if st.button("Validate", use_container_width=True):
             try:
                 with st.spinner("Validating..."):
@@ -643,13 +657,12 @@ def _render_action_buttons(project: Project, path: Path) -> None:
                         st.caption(f"Affected: {', '.join(err.affected_tasks)}")
 
     with col_save:
-        st.caption("Write changes to the JSON file on disk")
-        label = "Save *" if st.session_state.dirty else "Save"
-        if st.button(label, use_container_width=True, type="primary" if st.session_state.dirty else "secondary"):
+        if st.button("Save", use_container_width=True, key="save_btn"):
             try:
                 api.save_project(project, path)
                 _mark_clean()
                 st.success(f"Saved to {path.name}")
+                _allow_rerun()
                 st.rerun()
             except GanttError as exc:
                 st.error(f"Save failed: {exc.message}")
@@ -657,7 +670,6 @@ def _render_action_buttons(project: Project, path: Path) -> None:
                 st.error(f"Save failed: {exc}")
 
     with col_build:
-        st.caption("Generate a timestamped .xlsx Gantt workbook")
         if st.button("Build Excel", use_container_width=True):
             try:
                 with st.spinner("Building Excel..."):
@@ -674,15 +686,60 @@ def _render_action_buttons(project: Project, path: Path) -> None:
                 st.error(f"Build failed: {exc.message}")
 
     with col_baseline:
-        st.caption("Snapshot current dates as the planned reference")
         if st.button("Set Baseline", use_container_width=True):
             try:
                 with st.spinner("Setting baseline..."):
                     result = api.set_project_baseline(project)
                 _mark_dirty()
+                st.session_state["_baseline_just_set"] = True
                 st.success(f"Baseline set for {result.count_baselined} task(s), {len(result.tasks_skipped)} skipped.")
             except GanttError as exc:
                 st.error(f"Baseline failed: {exc.message}")
+
+    # --- Descriptions below buttons (all level) ---
+    desc_validate, desc_save, desc_build, desc_baseline = st.columns(4)
+
+    with desc_validate:
+        st.caption("Check for errors (circular deps, missing data, etc.)")
+    with desc_save:
+        st.caption("Write changes to the JSON file on disk")
+    with desc_build:
+        st.caption("Generate a timestamped .xlsx Gantt workbook")
+    with desc_baseline:
+        st.caption("Record each task's current scheduled start and finish as the original baseline dates")
+
+    # -- Below the button row: dirty indicator and contextual info -----------
+
+    if st.session_state.dirty:
+        st.markdown(
+            '<span style="color:#E68A00; font-style:italic;">Unsaved changes</span>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<span style="color:#2E8B57; font-style:italic;">All changes saved</span>',
+            unsafe_allow_html=True,
+        )
+
+    if st.session_state.get("_baseline_just_set"):
+        st.session_state["_baseline_just_set"] = False
+        st.info(
+            "**What just happened?** Each task's computed start and finish "
+            "dates were saved as the baseline — your original plan. Future "
+            "delays or completions will shift the live schedule, but the "
+            "baseline stays fixed so you can see how far off-plan you are "
+            "in the Excel output."
+        )
+        st.markdown(
+            "**Related settings in the sidebar:**\n"
+            "- **Auto-delay on load** — when you open a project after missed days, "
+            "PMSuite can automatically calculate how many days each overdue task "
+            "slipped and offer to record that delay. This keeps your schedule "
+            "current without manual data entry.\n"
+            "- **Keep local snapshots** — every time you save, PMSuite stores a "
+            "backup copy of your project file. If you ever need to recover a "
+            "previous version, these snapshots have you covered. Set to 0 to disable."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -793,10 +850,12 @@ def main() -> None:
                 col_cancel, col_discard, col_save_switch = st.columns(3)
                 with col_cancel:
                     if st.button("Cancel"):
+                        _allow_rerun()
                         st.rerun()
                 with col_discard:
                     if st.button("Discard & Switch"):
                         _load_project(new_path)
+                        _allow_rerun()
                         st.rerun()
                 with col_save_switch:
                     if st.button("Save & Switch"):
@@ -809,6 +868,7 @@ def main() -> None:
                             st.error(f"Save failed: {exc}")
                             return
                         _load_project(new_path)
+                        _allow_rerun()
                         st.rerun()
                 return
             else:
@@ -823,12 +883,9 @@ def main() -> None:
         _render_new_here()
         return
 
-    # Header with dirty badge
     title = f"PMSuite - {project.project.id} - {project.project.name}"
-    if st.session_state.dirty:
-        title += "  * Unsaved changes"
     st.title(title)
-    st.caption(f"{len(project.tasks)} tasks | timezone {project.project.timezone}")
+    st.caption(f"{len(project.tasks)} tasks | Timezone {project.project.timezone}")
 
     _inject_beforeunload(st.session_state.dirty)
 
