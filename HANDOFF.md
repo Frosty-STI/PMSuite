@@ -81,10 +81,10 @@ Latest commits (most recent first):
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 7 | Pending | **Holiday editor page** -- dedicated Streamlit route, tabbed by location, table of {date, name, source} with add/edit/delete, "Re-seed from library" with diff preview. |
-| 8 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
-| 9 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
-| 10 | Pending | **Playwright UI verification** -- automated browser tests for the Streamlit app. Covers golden-path flows: load project, add/edit/delete task, add/remove dependency, mark complete, save, validate, build Excel, set baseline, auto-catchup, new project creation, dirty-state badge, project switching. Test file: `tests/test_streamlit_playwright.py`. Requires `pip install playwright && playwright install chromium`. |
+| 7 | Pending | **Playwright UI verification** -- automated browser tests for the Streamlit app covering the current Step 6 editing surface. Screen out bugs before adding feature complexity. Covers golden-path flows: load project, add/edit/delete task, add/remove dependency, mark complete, save, validate, build Excel, set baseline, auto-catchup, new project creation, dirty-state badge, project switching. Test file: `tests/test_streamlit_playwright.py`. Requires `pip install playwright && playwright install chromium`. |
+| 8 | Pending | **Holiday editor page** -- dedicated Streamlit route, tabbed by location, table of {date, name, source} with add/edit/delete, "Re-seed from library" with diff preview. |
+| 9 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
+| 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
 | 11 | Pending | **Final Walkthrough Refresh** -- update the "New Here?" walkthrough content in `streamlit_app.py` to reflect the final shipped feature set, polish wording for non-technical users, and verify every step still matches the implemented behavior. Run after all other steps are complete. |
 
 ## Local layout
