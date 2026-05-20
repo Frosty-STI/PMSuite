@@ -302,3 +302,33 @@ This push delivers the UI and rendering support for arbitrarily deep parent/chil
 3. **Indented task names.** The frozen-pane Name column now indents child task names by 2 spaces per hierarchy level (`"  " * level + name`), making the tree structure visible even without the outline grouping.
 
 **Why:** NPDE programs need arbitrarily granular task decomposition — "Wafer Fab" breaks into "Lot 1 processing" and "Lot 2 processing," each of which breaks into sub-steps. The flat task list forced all tasks to one level, making the Gantt noisy for executives and lacking detail for engineers. Excel row grouping solves both: collapsed groups for the executive view, expanded detail for engineering review. The Streamlit "Add Child Task" button makes creating hierarchy as easy as clicking a button rather than manually setting parent_id.
+
+---
+
+## Push 22 -- (pending hash) -- 2026-05-20
+
+**Step 7c follow-up: NPDE demo hierarchy, bug fix, UI polish attempts, README rewrite**
+
+### Changes:
+
+1. **NPDE demo expanded to 17 tasks with parent/child hierarchy.** Added three parent groupings to `examples/npde_demo.json`: "Post-Fab Processing" (TASK-014, parent of TASK-004 Assembly + TASK-011 Local Assembly), "Final Documentation" (TASK-015, parent of TASK-008 Datasheet + TASK-012 TID Report + TASK-013 NDD Report), and two sub-lots under TASK-003 Wafer fab (TASK-016 Lot 1 + TASK-017 Lot 2 with SS+3 dependency). Demonstrates three levels of hierarchy for visual inspection of Excel row grouping.
+
+2. **Bug fix: "Add Child Task" now auto-clears parent's `cycle_time_days`.** Previously, clicking "Add Child Task" on a leaf task created the child correctly but left the parent's `cycle_time_days` set, causing `PARENT_HAS_CYCLE_TIME` validation errors. The button handler now calls `api.update_task(project, task.id, cycle_time_days=None)` when the task transitions from leaf to parent.
+
+3. **UI polish attempts (partially successful, two issues remain):**
+
+   - **Copy-able task ID:** Added `st.code(task.id)` at the top of every task editor, providing a monospace copy-able field for the task ID.
+   
+   - **Disabled checkbox cursor fix:** Injected CSS (`cursor: default !important` on `div[data-testid='stCheckbox']:has(input[disabled])`) to remove the red cancel/not-allowed cursor icon on the read-only "Complete?" indicators.
+   
+   - **Parent cycle time field:** Changed from `st.text("Cycle Time: (derived from children)")` to `st.text_input(..., disabled=True)` for visual consistency with the `st.number_input` on leaf tasks.
+
+4. **Two unresolved UI issues flagged in HANDOFF.md:**
+
+   - **"Is Complete" checkbox inside task expander reportedly does nothing when clicked.** The completion toggle (`st.checkbox("Is Complete")`) is interactive (not disabled) but the user cannot complete tasks. May be a Streamlit widget key conflict with the disabled "Complete?" indicator sharing a naming pattern, or a rerun timing issue with the Apply button flow.
+   
+   - **Parent task editors still visually differ from leaf task editors.** The `st.text_input(disabled=True)` for parent cycle time does not match the font/size of `st.number_input` on leaf tasks. Needs CSS override or a different widget approach.
+
+5. **README.md rewritten for new-machine setup.** Step-by-step instructions covering: prerequisites, clone, venv creation (Windows PowerShell/CMD/macOS/Linux), `pip install -e ".[dev]"`, test verification (`95 passed`), Streamlit launch with `--server.headless true`, demo exploration. Added troubleshooting section for common issues (streamlit not on PATH, email prompt, PowerShell red stderr, import failures).
+
+**Why:** The NPDE demo with real hierarchy is essential for visual verification of Excel row grouping and Streamlit hierarchy display. The README rewrite ensures smooth transfer to a new laptop — every command is explicit with platform-specific variants. The unresolved UI issues are documented so the next session can tackle them without re-discovering them.

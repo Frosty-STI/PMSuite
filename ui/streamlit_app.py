@@ -438,6 +438,7 @@ def _render_task_editor(
     task_labels: dict[str, str],
     is_parent: bool,
 ) -> None:
+    st.code(task.id, language=None)
     col1, col2 = st.columns(2)
 
     with col1:
@@ -467,7 +468,12 @@ def _render_task_editor(
                 key=f"cycle_{task.id}",
             )
         else:
-            st.text("Cycle Time: (derived from children)")
+            st.text_input(
+                "Cycle Time (Days)",
+                value="(derived from children)",
+                disabled=True,
+                key=f"cycle_{task.id}",
+            )
             new_cycle = None
 
         has_manual_start = st.checkbox(
@@ -637,6 +643,8 @@ def _render_task_editor(
                 manual_start_date=task.manual_start_date or date.today(),
                 parent_id=task.id,
             )
+            if task.cycle_time_days is not None:
+                api.update_task(project, task.id, cycle_time_days=None)
             _mark_dirty()
             st.success(f"Added child {child.id} under {task.id}")
             st.rerun()
@@ -901,6 +909,14 @@ def _render_sidebar() -> str | None:
 
 def main() -> None:
     st.set_page_config(page_title="PMSuite Gantt Builder", layout="wide")
+    st.markdown(
+        "<style>"
+        "div[data-testid='stCheckbox']:has(input[disabled]),"
+        "div[data-testid='stCheckbox']:has(input[disabled]) * "
+        "{ cursor: default !important; }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
     _init_session_state()
 
     params = st.query_params

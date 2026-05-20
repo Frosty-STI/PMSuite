@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Steps 7a+7b+7c are complete. Child task hierarchy is live in both Streamlit and Excel. The "Complete?" checkbox is live and the Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
+**Steps 7a+7b+7c are complete with two known UI polish issues (see below). Child task hierarchy is live in both Streamlit and Excel. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 7c+  | NPDE demo hierarchy, auto-clear parent cycle_time, UI polish attempts, README rewrite |
 | `4689601` | 7c   | Child task hierarchy: Streamlit Add Child Task + Parent picker, Excel row grouping |
 | `91695ac` | 7a+7b | Complete? checkbox + Playwright 25/25 green |
 | `abecad1` | 7    | Step 7: Playwright UI verification suite (in progress) |
@@ -86,6 +87,24 @@ Latest commits (most recent first):
 - **"Complete?" indicator** -- disabled checkbox on each collapsed task row (far right) reflecting `task.is_complete`. Session-state sync ensures it updates immediately on in-session completion changes.
 - **Playwright verification** -- 25 tests across 10 classes verify all editing flows end-to-end. Automatic screenshot-on-failure. Run: `pytest tests/test_streamlit_playwright.py -m playwright`.
 
+## Known UI issues (must fix before Step 8)
+
+Two Streamlit polish issues were identified during visual inspection and partially attempted but not resolved:
+
+### 1. "Complete?" checkbox is not clickable (read-only indicator vs interactive toggle)
+
+The `st.checkbox("Complete?", disabled=True)` on collapsed task rows is intentionally a read-only status indicator. The actual completion toggle is the `st.checkbox("Is Complete")` INSIDE the task expander, which should be interactive. **The user reports that clicking "Is Complete" inside the expander does nothing.** This may be a Streamlit widget key conflict or a rerun timing issue. The cursor CSS fix (`cursor: default !important` on disabled checkboxes) was applied to remove the red cancel icon, but the underlying interactivity problem persists.
+
+**Where to look:** `ui/streamlit_app.py` lines ~513-520 (`new_complete = st.checkbox("Is Complete", ...)`) and the Apply button handler at ~593 that processes `new_complete`. The `st.session_state[ind_key] = task.is_complete` force-sync at ~424 may be interfering with the interactive checkbox if widget keys collide.
+
+### 2. Parent task editors look visually different from leaf task editors
+
+Parent tasks show `st.text_input("Cycle Time (Days)", value="(derived from children)", disabled=True)` while leaf tasks show `st.number_input("Cycle Time (Days)", ...)`. The user reports these still look visually different (font, size, styling). The fix attempted (switching from `st.text()` to `st.text_input(disabled=True)`) improved consistency but did not fully match the `number_input` appearance. The next agent should investigate using the same widget type or CSS overrides to make parent and leaf task editors visually identical.
+
+**Where to look:** `ui/streamlit_app.py` lines ~463-477.
+
+---
+
 ## Roadmap (remaining steps)
 
 | Step | Status | Description |
@@ -94,7 +113,7 @@ Latest commits (most recent first):
 | 7b | **Complete** | **Playwright UI verification** -- 25 tests across 10 classes, all green. Fixed subprocess pipe buffer deadlock, locator ambiguity from dependency text, and Streamlit checkbox off-viewport clicks. Screenshot-on-failure infrastructure. |
 | 7c | **Complete** | **Child task hierarchy in Streamlit + Excel** -- (1) **Streamlit:** "Add Child Task" button inside each task expander (pre-fills parent_id, location, calendar mode). "Parent task" dropdown in Add Task form. Task list displayed in hierarchy order with depth indentation. Parent picker in task editor already existed. (2) **Excel:** `xlsxwriter` row grouping with `outline_level` on Day View and Week View. `outline_settings(symbols_below=False)` puts collapse toggles on the parent row above. Indented task names in frozen-pane Name column. Recursive levels for nested children. |
 | 8 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. Parse the Excel file, map each PMSuite site to its country column (DAL→USA, MLA→Malaysia, CLARK→Philippines, AIZU→Japan, FR-BIP→Germany, TIEMA→Malaysia, TIPI→Philippines, TAI→Taiwan), and seed site-specific holidays including company holidays and local observances. For DAL (USA column empty in calendar), keep the existing `holidays` library as fallback. Update demo project files with the real calendar data. |
-| 9 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
+| 9 | Pending | **Expand npde_demo.json** -- currently 17 tasks (13 original + 4 hierarchy additions); target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
 | 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
 | 11 | Pending | **Final Walkthrough Refresh** -- update the "New Here?" walkthrough content in `streamlit_app.py` to reflect the final shipped feature set, polish wording for non-technical users, and verify every step still matches the implemented behavior. Run after all other steps are complete. |
 
