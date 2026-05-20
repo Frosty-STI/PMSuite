@@ -380,13 +380,23 @@ def _render_task_table(project: Project) -> None:
     for i, task in enumerate(project.tasks):
         is_parent = project.has_subtasks(task.id)
         prefix = "[P] " if is_parent else "    "
-        complete_mark = " [done]" if task.is_complete else ""
-        label = f"{prefix}{task.id} -- {task.name}{complete_mark}"
+        label = f"{prefix}{task.id} -- {task.name}"
         if task.parent_id:
             label += f"  (child of {task.parent_id})"
 
-        with st.expander(label, expanded=False):
-            _render_task_editor(project, task, i, task_ids, task_labels, is_parent)
+        exp_col, chk_col = st.columns([8, 2])
+        with exp_col:
+            with st.expander(label, expanded=False):
+                _render_task_editor(project, task, i, task_ids, task_labels, is_parent)
+        with chk_col:
+            ind_key = f"complete_indicator_{task.id}"
+            st.session_state[ind_key] = task.is_complete
+            st.checkbox(
+                "Complete?",
+                value=task.is_complete,
+                disabled=True,
+                key=ind_key,
+            )
 
 
 def _render_task_editor(
@@ -835,6 +845,12 @@ def _render_sidebar() -> str | None:
 def main() -> None:
     st.set_page_config(page_title="PMSuite Gantt Builder", layout="wide")
     _init_session_state()
+
+    params = st.query_params
+    if "project" in params and st.session_state.project is None:
+        qp_path = _resolve_path(params["project"])
+        if qp_path.exists():
+            _load_project(qp_path)
 
     # Sidebar and project selection
     selection = _render_sidebar()

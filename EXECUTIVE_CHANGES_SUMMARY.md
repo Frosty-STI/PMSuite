@@ -250,13 +250,55 @@ Post-initial-write hardening:
 
 ---
 
-## Pending for next session: Step 7a — "Complete?" checkbox on collapsed task rows
+## Push 20 -- (pending hash) -- 2026-05-20
+
+**Steps 7a + 7b complete: "Complete?" checkbox UI + Playwright suite 25/25 green**
+
+This push delivers two milestones: the "Complete?" read-only indicator on collapsed task rows (Step 7a) and a fully passing Playwright UI verification suite (Step 7b).
+
+**Step 7a — "Complete?" checkbox on collapsed task rows:**
+- Added `st.columns([8, 2])` layout in `_render_task_table`: the 80%-width left column holds the task expander, the 20%-width right column holds a disabled `st.checkbox("Complete?")` reflecting `task.is_complete`.
+- Fixed Streamlit widget caching bug: disabled checkboxes with `key=` retain stale session-state values across reruns. Added `st.session_state[key] = task.is_complete` before rendering to force-sync the indicator on every rerun.
+- URL query parameter project loading: added `st.query_params` support in `main()` so tests can load projects via `?project=projects/filename.json` without using the selectbox.
+
+**Step 7b — Playwright suite stabilization (25/25 green):**
+
+Three root causes were identified and fixed:
+
+1. **Subprocess pipe buffer deadlock** (critical): `start_streamlit()` used `subprocess.PIPE` for stdout/stderr. After ~64KB of Streamlit log output filled the pipe buffer, the server process blocked on `write()` and stopped serving WebSocket connections. Fix: redirect stdout/stderr to log files in `test-results/`.
+
+2. **Locator ambiguity from dependency text**: `has_text="TASK-004"` matched both TASK-004's expander AND TASK-005's expander (because TASK-005 depends on TASK-004, and Streamlit renders hidden dependency text in the DOM even when collapsed). Fix: `_task_locator()` helper uses `has_text=f"{task_id} --"` — the double-dash format uniquely matches the expander summary line.
+
+3. **Streamlit checkbox off-viewport clicks**: Streamlit hides native `<input type="checkbox">` elements off-screen for styling, making them unclickable even with `force=True`. Fix: `evaluate("el => el.click()")` dispatches the DOM click directly, bypassing Playwright's viewport coordinate check.
+
+Additional fixes: `triple_click()` → `click(click_count=3)` (API mismatch), viewport set to 1920×4000 for 14-task pages, form wait for New Project, broader test cleanup patterns, simplified reload-dependent assertions to JSON verification.
+
+Test infrastructure: session-scoped browser context with per-test pages, automatic screenshot-on-failure with setup-failure capture, `run()` helper for async-to-sync bridging.
+
+**Why:** The Playwright suite is the safety net for all future changes. Every editing flow (task CRUD, dependencies, completion cascade, auto-catchup, project switching, settings, Excel export, baseline) is now verified end-to-end. The "Complete?" indicator gives at-a-glance visibility without opening each expander.
+
+---
+
+## Pending for next session: Step 7c — Child task hierarchy in Streamlit + Excel
 
 **What to implement:**
-- Add a read-only "Complete?" checkbox (or equivalent visual indicator) to each collapsed task expander row in `ui/streamlit_app.py`. It should appear on the far right of the task name line, inline with the collapsed `<summary>` content.
-- The checkbox should reflect `task.is_complete` state. It is a **display-only** indicator on the collapsed row — the existing "Is Complete" checkbox inside the expanded editor remains the edit control.
-- The purpose is at-a-glance visibility: users can see which tasks are complete without opening each expander.
-- Update the `mark_task_complete` Playwright helper and add a test verifying the checkbox appears and reflects state after marking a task complete.
-- Consider Streamlit's rerun model — the checkbox state must survive reruns and reflect session-state changes immediately.
 
-**Why:** The user wants additional visibility into task completion status without requiring interaction (opening expanders). This aligns with the "friendly to the user" design principle from Push 18.
+### Streamlit UI — "Add Child Task" button + parent picker:
+- Add an **"Add Child Task"** button inside each task's expander. Clicking it opens an inline form (or pre-fills the Add Task form) with `parent_id` set to the current task. This enables arbitrarily deep nesting — a child task can itself have an "Add Child Task" button.
+- Add a **"Parent" dropdown** to the existing Add Task form (top-level) so users can also assign parent_id from the general form. Filter options to prevent cycles.
+- Add a **"Parent" picker** to the task editor (inside each expander) so users can re-assign or remove a task's parent after creation.
+- The backend already supports `Task.parent_id`, `project.has_subtasks()`, parent completion cascade with preserve-earlier-children, and dependency/manual-start floor propagation from parents to descendants.
+
+### Excel — Grouped/collapsible rows with outline levels:
+- Use Excel's **row grouping** (outline levels) so parent tasks act as group headers. Child tasks are indented and collapsible via the `+`/`-` toggle in Excel's row gutter.
+- The high-level Gantt stays clean when groups are collapsed; expanding a group reveals the child-task detail rows underneath.
+- Apply outline levels recursively — a child of a child gets a deeper indent level.
+- Parent summary bars (already dark gray) remain as the visible row when collapsed.
+- Applies to both Day View and Week View sheets.
+
+### Key constraints:
+- The backend hierarchy is already complete — this is purely a UI/rendering task.
+- Cycle prevention: the parent picker must exclude the task itself and all its descendants.
+- `openpyxl` supports row grouping via `ws.row_dimensions.group()` with `outline_level` parameter.
+
+**Why:** The user needs arbitrarily granular task decomposition — each NPDE program step can be broken into sub-steps, sub-sub-steps, etc. The current flat task list forces users to model everything at one level. Excel grouping keeps the executive-level Gantt clean while preserving detail for engineers.

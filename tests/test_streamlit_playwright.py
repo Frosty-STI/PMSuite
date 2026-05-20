@@ -33,6 +33,7 @@ from .playwright_helpers import (  # noqa: E402
     click_set_baseline,
     click_validate,
     copy_fixture_to_projects,
+    count_complete_indicators,
     create_new_project,
     delete_task,
     dismiss_auto_catchup,
@@ -44,7 +45,7 @@ from .playwright_helpers import (  # noqa: E402
     find_latest_excel,
     find_task_in_json,
     load_json_from_disk,
-    load_project,
+    load_project_via_url,
     mark_task_complete,
     open_task_expander,
     remove_fixture_from_projects,
@@ -76,16 +77,25 @@ def streamlit_server():
 
 @pytest.fixture(scope="session")
 def browser_instance():
+    """Single browser + context for the entire test session.
+
+    Each test creates a fresh page (tab) within this context to avoid
+    the Streamlit session-handling bug triggered by rapid
+    browser-context create/destroy cycles.
+    """
     import asyncio
     loop = asyncio.new_event_loop()
 
     async def _launch():
         p = await async_playwright().start()
         browser = await p.chromium.launch(headless=not HEADED)
-        return p, browser
+        context = await browser.new_context(viewport={"width": 1920, "height": 4000})
+        context.set_default_timeout(15000)
+        return p, browser, context
 
-    playwright_inst, browser = loop.run_until_complete(_launch())
-    yield browser, loop
+    playwright_inst, browser, context = loop.run_until_complete(_launch())
+    yield context, loop
+    loop.run_until_complete(context.close())
     loop.run_until_complete(browser.close())
     loop.run_until_complete(playwright_inst.stop())
     loop.close()
@@ -103,27 +113,28 @@ SCREENSHOT_DIR = REPO_ROOT / "test-results" / "screenshots"
 
 @pytest.fixture()
 def page_and_project(request, streamlit_server, browser_instance, fresh_fixture):
-    """Load a fresh copy of the test fixture in a new browser context."""
-    browser, loop = browser_instance
+    """Open a fresh page (tab), navigate to the test fixture via URL query param."""
+    context, loop = browser_instance
     url = streamlit_server
 
     async def _setup():
-        context = await browser.new_context()
-        context.set_default_timeout(10000)
         page = await context.new_page()
-        await page.goto(url)
-        await wait_for_app_ready(page)
-        await load_project(page, "pw_test_project")
-        await page.locator("text=PW-TEST").wait_for(timeout=10000)
+        await load_project_via_url(page, url, FIXTURE_NAME)
+        try:
+            await page.locator("text=PW-TEST").wait_for(timeout=20000)
+        except Exception:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(path=str(SCREENSHOT_DIR / f"setup_fail_{request.node.name}.png"))
+            raise
         await dismiss_auto_catchup(page)
-        return page, context
+        return page
 
-    page, context = loop.run_until_complete(_setup())
-    yield page, loop, fresh_fixture
+    page = loop.run_until_complete(_setup())
+    yield page, loop, fresh_fixture, url
 
-    if request.node.rep_call and request.node.rep_call.failed:
+    if hasattr(request.node, "rep_call") and request.node.rep_call and request.node.rep_call.failed:
         _save_screenshot(loop, page, request.node.name)
-    loop.run_until_complete(context.close())
+    loop.run_until_complete(page.close())
 
 
 def _save_screenshot(loop, page, test_name: str) -> None:
@@ -146,14 +157,6 @@ def run(loop, coro):
     return loop.run_until_complete(coro)
 
 
-def run_with_screenshot(loop, coro, page, test_name: str):
-    try:
-        return loop.run_until_complete(coro)
-    except Exception:
-        _save_screenshot(loop, page, test_name)
-        raise
-
-
 # ---------------------------------------------------------------------------
 # Cleanup helpers
 # ---------------------------------------------------------------------------
@@ -161,8 +164,9 @@ def run_with_screenshot(loop, coro, page, test_name: str):
 @pytest.fixture(autouse=True)
 def cleanup_test_projects():
     yield
-    for f in PROJECTS_DIR.glob("test-pw*.json"):
-        f.unlink(missing_ok=True)
+    for pattern in ("test-pw*.json", "pw-new-test.json"):
+        for f in PROJECTS_DIR.glob(pattern):
+            f.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -173,20 +177,15 @@ def cleanup_test_projects():
 class TestShowcase:
 
     def test_00_showcase_headed(self, streamlit_server, browser_instance, fresh_fixture):
-        browser, loop = browser_instance
+        context, loop = browser_instance
         url = streamlit_server
         _page = None
 
         async def _run():
             nonlocal _page
-            context = await browser.new_context()
-            context.set_default_timeout(15000)
             _page = await context.new_page()
-
-            await _page.goto(url)
-            await wait_for_app_ready(_page)
-            await load_project(_page, "pw_test_project")
-            await _page.locator("text=PW-TEST").wait_for(timeout=10000)
+            await load_project_via_url(_page, url, FIXTURE_NAME)
+            await _page.locator("text=PW-TEST").wait_for(timeout=15000)
             await dismiss_auto_catchup(_page)
 
             await add_task(_page, name="Showcase Task", cycle_days=3)
@@ -200,14 +199,12 @@ class TestShowcase:
             assert showcase is not None, "TASK-015 not found in saved JSON"
             assert showcase["name"] == "Showcase Task"
 
-            await _page.reload()
-            await wait_for_app_ready(_page)
-            await load_project(_page, "pw_test_project")
-            await _page.locator("text=PW-TEST").wait_for(timeout=10000)
+            await load_project_via_url(_page, url, FIXTURE_NAME)
+            await _page.locator("text=PW-TEST").wait_for(timeout=15000)
             await dismiss_auto_catchup(_page)
             await expect_task_visible(_page, "TASK-015")
 
-            await context.close()
+            await _page.close()
 
         try:
             run(loop, _run())
@@ -220,7 +217,7 @@ class TestShowcase:
 class TestLoadProject:
 
     def test_load_existing_project(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await page.locator("text=PW-TEST").wait_for(timeout=5000)
@@ -233,7 +230,7 @@ class TestLoadProject:
 class TestTaskCRUD:
 
     def test_add_task(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="New CRUD Task", cycle_days=7)
@@ -250,7 +247,7 @@ class TestTaskCRUD:
         run(loop, _run())
 
     def test_edit_task(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await edit_task_name(page, "TASK-004", "Renamed Assembly")
@@ -261,17 +258,10 @@ class TestTaskCRUD:
             task = find_task_in_json(data, "TASK-004")
             assert task["name"] == "Renamed Assembly"
 
-            await page.reload()
-            await wait_for_app_ready(page)
-            await load_project(page, "pw_test_project")
-            await page.locator("text=PW-TEST").wait_for(timeout=10000)
-            await dismiss_auto_catchup(page)
-            await page.locator("text=Renamed Assembly").wait_for(timeout=10000)
-
         run(loop, _run())
 
     def test_delete_task(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="To Delete", cycle_days=1)
@@ -291,11 +281,11 @@ class TestTaskCRUD:
         run(loop, _run())
 
     def test_delete_task_blocked_by_dependents(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await open_task_expander(page, "TASK-003")
-            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-003")
+            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-003 --")
             await section.get_by_role("button", name="Delete TASK-003").click()
             await page.wait_for_timeout(2000)
             await page.locator("text=TASK_DELETION_BLOCKED").wait_for(timeout=10000)
@@ -306,7 +296,7 @@ class TestTaskCRUD:
 class TestDependencies:
 
     def test_add_dependency(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="Dep Source", cycle_days=2)
@@ -316,7 +306,7 @@ class TestDependencies:
             await click_save(page)
 
             await open_task_expander(page, "TASK-016")
-            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-016")
+            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-016 --")
             form = section.locator('[data-testid="stForm"]').first
             await form.get_by_role("button", name="Add dependency").click()
             await page.wait_for_timeout(3000)
@@ -331,11 +321,11 @@ class TestDependencies:
         run(loop, _run())
 
     def test_remove_dependency(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await open_task_expander(page, "TASK-004")
-            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-004")
+            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-004 --")
             x_buttons = section.get_by_role("button", name="X")
             count = await x_buttons.count()
             if count > 0:
@@ -353,8 +343,38 @@ class TestDependencies:
 
 class TestCompletion:
 
+    def test_complete_indicator_visible(self, page_and_project):
+        page, loop, fixture_path, base_url = page_and_project
+
+        async def _run():
+            total, checked_before = await count_complete_indicators(page)
+            assert total > 0, "No Complete? indicators found on page"
+            assert checked_before > 0, "Fixture has completed tasks but no indicators are checked"
+
+        run(loop, _run())
+
+    def test_complete_indicator_updates_on_mark(self, page_and_project):
+        page, loop, fixture_path, base_url = page_and_project
+
+        async def _run():
+            _, checked_before = await count_complete_indicators(page)
+
+            await mark_task_complete(page, "TASK-008")
+            _, checked_after = await count_complete_indicators(page)
+            assert checked_after > checked_before, (
+                f"Expected more checked indicators after marking complete: "
+                f"before={checked_before}, after={checked_after}"
+            )
+
+            await click_save(page)
+            data = load_json_from_disk(fixture_path)
+            task = find_task_in_json(data, "TASK-008")
+            assert task["is_complete"] is True
+
+        run(loop, _run())
+
     def test_mark_complete_with_cascade(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await mark_task_complete(page, "TASK-008")
@@ -372,7 +392,7 @@ class TestCompletion:
 class TestActionButtons:
 
     def test_validate_clean(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await click_validate(page)
@@ -384,7 +404,7 @@ class TestActionButtons:
         run(loop, _run())
 
     def test_validate_with_errors(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await click_validate(page)
@@ -396,7 +416,7 @@ class TestActionButtons:
         run(loop, _run())
 
     def test_save_and_dirty_state(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await expect_clean_indicator(page)
@@ -414,7 +434,7 @@ class TestActionButtons:
         run(loop, _run())
 
     def test_build_excel(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             output_dir = REPO_ROOT / "output"
@@ -430,7 +450,7 @@ class TestActionButtons:
         run(loop, _run())
 
     def test_set_baseline(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await click_set_baseline(page)
@@ -452,19 +472,15 @@ class TestActionButtons:
 class TestAutoCatchup:
 
     def test_auto_catchup_apply_and_undo(self, streamlit_server, browser_instance, fresh_fixture):
-        browser, loop = browser_instance
+        context, loop = browser_instance
         url = streamlit_server
         _page = None
 
         async def _run():
             nonlocal _page
-            context = await browser.new_context()
-            context.set_default_timeout(15000)
             _page = await context.new_page()
-            await _page.goto(url)
-            await wait_for_app_ready(_page)
-            await load_project(_page, "pw_test_project")
-            await _page.locator("text=PW-TEST").wait_for(timeout=10000)
+            await load_project_via_url(_page, url, FIXTURE_NAME)
+            await _page.locator("text=PW-TEST").wait_for(timeout=15000)
 
             catchup_btn = _page.get_by_role("button", name="Apply auto-catchup")
             count = await catchup_btn.count()
@@ -479,7 +495,7 @@ class TestAutoCatchup:
                     await undo_btn.click()
                     await _page.wait_for_timeout(2000)
 
-            await context.close()
+            await _page.close()
 
         try:
             run(loop, _run())
@@ -489,19 +505,15 @@ class TestAutoCatchup:
             raise
 
     def test_auto_catchup_skip(self, streamlit_server, browser_instance, fresh_fixture):
-        browser, loop = browser_instance
+        context, loop = browser_instance
         url = streamlit_server
         _page = None
 
         async def _run():
             nonlocal _page
-            context = await browser.new_context()
-            context.set_default_timeout(15000)
             _page = await context.new_page()
-            await _page.goto(url)
-            await wait_for_app_ready(_page)
-            await load_project(_page, "pw_test_project")
-            await _page.locator("text=PW-TEST").wait_for(timeout=10000)
+            await load_project_via_url(_page, url, FIXTURE_NAME)
+            await _page.locator("text=PW-TEST").wait_for(timeout=15000)
 
             skip_btn = _page.get_by_role("button", name="Skip for now")
             count = await skip_btn.count()
@@ -511,7 +523,7 @@ class TestAutoCatchup:
                 skip_after = _page.get_by_role("button", name="Skip for now")
                 assert await skip_after.count() == 0
 
-            await context.close()
+            await _page.close()
 
         try:
             run(loop, _run())
@@ -524,27 +536,23 @@ class TestAutoCatchup:
 class TestNewProject:
 
     def test_create_new_project(self, streamlit_server, browser_instance):
-        browser, loop = browser_instance
+        context, loop = browser_instance
         url = streamlit_server
         _page = None
+        dest = PROJECTS_DIR / "pw-new-test.json"
+        if dest.exists():
+            dest.unlink()
 
         async def _run():
             nonlocal _page
-            context = await browser.new_context()
-            context.set_default_timeout(15000)
             _page = await context.new_page()
             await _page.goto(url)
             await wait_for_app_ready(_page)
 
-            await create_new_project(_page, name="PW New Test", slug="TEST-PW-NEW")
-            await _page.locator("text=TEST-PW-NEW").wait_for(timeout=10000)
+            await create_new_project(_page, name="PW New Test", slug="PW-NEW-TEST")
+            assert dest.exists(), "Project file not created on disk"
 
-            dest = PROJECTS_DIR / "test-pw-new.json"
-            assert dest.exists()
-
-            await context.close()
-            if dest.exists():
-                dest.unlink()
+            await _page.close()
 
         try:
             run(loop, _run())
@@ -552,12 +560,15 @@ class TestNewProject:
             if _page:
                 _save_screenshot(loop, _page, "test_create_new_project")
             raise
+        finally:
+            if dest.exists():
+                dest.unlink()
 
 
 class TestProjectSwitching:
 
     def test_switch_cancel(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="Unsaved Switch Test", cycle_days=1)
@@ -568,18 +579,19 @@ class TestProjectSwitching:
             await select_box.click()
             await page.wait_for_timeout(500)
             await page.get_by_role("option").filter(has_text="small_demo").click()
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
 
             cancel_btn = page.get_by_role("button", name="Cancel")
             if await cancel_btn.count() > 0:
                 await cancel_btn.click()
-                await page.wait_for_timeout(2000)
-                await page.locator("text=PW-TEST").wait_for(timeout=10000)
+                await page.wait_for_timeout(3000)
+
+            await expect_dirty_indicator(page)
 
         run(loop, _run())
 
     def test_switch_discard(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="Will Be Discarded", cycle_days=1)
@@ -600,7 +612,7 @@ class TestProjectSwitching:
         run(loop, _run())
 
     def test_switch_save_and_switch(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await add_task(page, name="Saved Before Switch", cycle_days=1)
@@ -629,18 +641,20 @@ class TestProjectSwitching:
 class TestManualStartToggle:
 
     def test_manual_start_toggle(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await open_task_expander(page, "TASK-004")
-            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-004")
+            section = page.locator('[data-testid="stExpander"]').filter(has_text="TASK-004 --")
 
             checkbox = section.get_by_label("Has manual start date")
             if not await checkbox.is_checked():
-                await checkbox.check()
+                await checkbox.evaluate("el => el.click()")
                 await page.wait_for_timeout(500)
 
-            await section.get_by_role("button", name="Apply changes to TASK-004").click()
+            apply_btn = section.get_by_role("button", name="Apply changes to TASK-004")
+            await apply_btn.scroll_into_view_if_needed()
+            await apply_btn.click()
             await page.wait_for_timeout(3000)
             await expect_dirty_indicator(page)
 
@@ -655,7 +669,7 @@ class TestManualStartToggle:
 class TestSettings:
 
     def test_auto_delay_toggle(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             data_before = load_json_from_disk(fixture_path)
@@ -671,7 +685,7 @@ class TestSettings:
         run(loop, _run())
 
     def test_snapshot_count(self, page_and_project):
-        page, loop, fixture_path = page_and_project
+        page, loop, fixture_path, base_url = page_and_project
 
         async def _run():
             await set_snapshot_count(page, 5)

@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Step 6 (Streamlit editing surface) is complete. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
+**Steps 7a+7b are complete. The "Complete?" checkbox is live and the Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 7a+7b | Complete? checkbox + Playwright 25/25 green |
 | `abecad1` | 7    | Step 7: Playwright UI verification suite (in progress) |
 | (pending) | 6    | Streamlit editing surface, New Here? walkthrough, button descriptions, Executive Changes Summary |
 | `2b24ce7` | 6a   | Step 6 editing API primitives (add/update/delete task, add/remove dependency) |
@@ -27,7 +28,7 @@ Latest commits (most recent first):
 | `b7c357d` | doc  | Comprehensive design documentation (6 files) |
 | `10a294d` | 0    | Walking-skeleton scaffold |
 
-**95/95 tests passing** (`pytest -q` ~0.7 sec).
+**120 tests passing** (95 backend ~0.8 sec + 25 Playwright ~4 min).
 
 ## What works today
 
@@ -77,14 +78,17 @@ Latest commits (most recent first):
 - **Settings panel** -- sidebar toggles for auto_delay_on_load and keep_local_snapshots.
 - **"New Here?" walkthrough** -- pale green banner with 10-step guide grounded in MASTERECAP Q1-Q35. Placeholder content; will be refreshed before shipping (Step 11).
 - **Summary table** -- read-only dataframe overview above the task editors.
+- **"Complete?" indicator** -- disabled checkbox on each collapsed task row (far right) reflecting `task.is_complete`. Session-state sync ensures it updates immediately on in-session completion changes.
+- **Playwright verification** -- 25 tests across 10 classes verify all editing flows end-to-end. Automatic screenshot-on-failure. Run: `pytest tests/test_streamlit_playwright.py -m playwright`.
 
 ## Roadmap (remaining steps)
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 7 | In progress | **Playwright UI verification** -- 23 tests written across 10 classes covering 18 golden-path flows. Automatic screenshot-on-failure saves PNGs to `test-results/screenshots/`. Helpers in `tests/playwright_helpers.py`, tests in `tests/test_streamlit_playwright.py`, fixture in `tests/fixtures/npde_playwright_test_fixture.json`, design doc in `PLAYWRIGHT_SCREENING.md`. Selectors rewritten after first run; **full green run not yet confirmed** -- next agent must run suite, debug remaining failures, and commit once stable. See `PLAYWRIGHT_SCREENING.md` for full coverage table and known gaps. |
-| 7a | Pending | **UI: "Complete?" checkbox on collapsed task expanders** -- move the completion indicator from inside the task expander ("Is Complete" checkbox) to an inline "Complete?" checkbox visible on each collapsed task row (far right, aligned with task name). The existing `Is Complete` checkbox inside the expander should remain for editing; this adds read-at-a-glance visibility without opening each task. Update `mark_task_complete` helper in `playwright_helpers.py` and add a Playwright test for the new UI element. |
-| 8 | Pending | **Holiday editor page** -- dedicated Streamlit route, tabbed by location, table of {date, name, source} with add/edit/delete, "Re-seed from library" with diff preview. |
+| 7a | **Complete** | **UI: "Complete?" checkbox on collapsed task expanders** -- read-only disabled checkbox in `st.columns([8, 2])` layout, session-state sync to fix Streamlit widget caching, URL query param project loading. |
+| 7b | **Complete** | **Playwright UI verification** -- 25 tests across 10 classes, all green. Fixed subprocess pipe buffer deadlock, locator ambiguity from dependency text, and Streamlit checkbox off-viewport clicks. Screenshot-on-failure infrastructure. |
+| 7c | Pending | **Child task hierarchy in Streamlit + Excel** -- (1) **Streamlit:** Add "Add Child Task" button inside each task expander (pre-fills parent_id). Add "Parent" dropdown to the top-level Add Task form and to the task editor for re-assigning parents. Enable arbitrarily deep nesting — a child task can itself have children. Backend hierarchy already complete (`parent_id`, `has_subtasks()`, cascade, floor propagation). (2) **Excel:** Use `openpyxl` row grouping (`ws.row_dimensions.group()` with `outline_level`) so parent tasks are collapsible group headers. Child rows indent and collapse via Excel's `+`/`-` toggle. Recursive outline levels for nested children. Both Day View and Week View sheets. High-level Gantt stays clean when collapsed; detail available on expand. |
+| 8 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. Parse the Excel file, map each PMSuite site to its country column (DAL→USA, MLA→Malaysia, CLARK→Philippines, AIZU→Japan, FR-BIP→Germany, TIEMA→Malaysia, TIPI→Philippines, TAI→Taiwan), and seed site-specific holidays including company holidays and local observances. For DAL (USA column empty in calendar), keep the existing `holidays` library as fallback. Update demo project files with the real calendar data. |
 | 9 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
 | 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
 | 11 | Pending | **Final Walkthrough Refresh** -- update the "New Here?" walkthrough content in `streamlit_app.py` to reflect the final shipped feature set, polish wording for non-technical users, and verify every step still matches the implemented behavior. Run after all other steps are complete. |
@@ -167,7 +171,7 @@ C:\Users\Frosty\PMSuite\
 
 1. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
 2. Read `EXECUTIVE_CHANGES_SUMMARY.md` for the history of every push.
-3. Run `pytest -q` from `C:\Users\Frosty\PMSuite` -- should show 95 passing.
+3. Run `pytest -q --ignore=tests/test_streamlit_playwright.py` from `C:\Users\Frosty\PMSuite` -- should show 95 backend tests passing. Optionally run `pytest tests/test_streamlit_playwright.py -m playwright` for the 25 Playwright UI tests (~4 min).
 4. Check the roadmap above for the next pending step and start there.
 
 ## Critical knowledge for next agent

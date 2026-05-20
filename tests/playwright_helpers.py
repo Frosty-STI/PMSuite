@@ -42,6 +42,10 @@ def remove_fixture_from_projects(name: str = "pw_test_project.json") -> None:
 
 
 def start_streamlit(port: int) -> subprocess.Popen:
+    log_dir = REPO_ROOT / "test-results"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stdout_log = open(log_dir / "streamlit_stdout.log", "w")
+    stderr_log = open(log_dir / "streamlit_stderr.log", "w")
     proc = subprocess.Popen(
         [
             "python", "-m", "streamlit", "run",
@@ -51,9 +55,11 @@ def start_streamlit(port: int) -> subprocess.Popen:
             "--browser.gatherUsageStats", "false",
         ],
         cwd=str(REPO_ROOT),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=stdout_log,
+        stderr=stderr_log,
     )
+    proc._stdout_log = stdout_log
+    proc._stderr_log = stderr_log
     deadline = time.time() + 30
     while time.time() < deadline:
         try:
@@ -72,6 +78,12 @@ def stop_streamlit(proc: subprocess.Popen) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=5)
+    for f in (getattr(proc, "_stdout_log", None), getattr(proc, "_stderr_log", None)):
+        if f:
+            try:
+                f.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +95,12 @@ async def wait_for_app_ready(page, timeout: int = SLOW_TIMEOUT) -> None:
     await page.wait_for_timeout(2000)
 
 
+async def load_project_via_url(page, base_url: str, project_file: str, timeout: int = SLOW_TIMEOUT) -> None:
+    await page.goto(f"{base_url}/?project=projects/{project_file}")
+    await page.wait_for_selector('[data-testid="stAppViewContainer"]', timeout=timeout)
+    await page.wait_for_timeout(3000)
+
+
 async def load_project(page, project_label: str, timeout: int = SLOW_TIMEOUT) -> None:
     sidebar = page.locator('[data-testid="stSidebar"]')
     select_box = sidebar.get_by_role("combobox").first
@@ -90,7 +108,7 @@ async def load_project(page, project_label: str, timeout: int = SLOW_TIMEOUT) ->
     await page.wait_for_timeout(500)
     option = page.get_by_role("option").filter(has_text=project_label)
     await option.click()
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(5000)
 
 
 async def dismiss_auto_catchup(page) -> None:
@@ -131,8 +149,17 @@ async def add_task(
     await page.wait_for_timeout(3000)
 
 
+def _task_locator(page, task_id: str):
+    """Return a locator that uniquely matches the expander for *this* task.
+
+    Uses ``"TASK-NNN --"`` so child expanders showing ``(child of TASK-NNN)``
+    are excluded.
+    """
+    return page.locator('[data-testid="stExpander"]').filter(has_text=f"{task_id} --")
+
+
 async def open_task_expander(page, task_id: str) -> None:
-    expander = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    expander = _task_locator(page, task_id)
     is_open = await expander.locator("details[open]").count() > 0
     if not is_open:
         summary = expander.locator("summary").first
@@ -142,7 +169,7 @@ async def open_task_expander(page, task_id: str) -> None:
 
 async def edit_task_name(page, task_id: str, new_name: str) -> None:
     await open_task_expander(page, task_id)
-    section = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    section = _task_locator(page, task_id)
     name_input = section.get_by_label("Name")
     await name_input.clear()
     await name_input.fill(new_name)
@@ -152,17 +179,20 @@ async def edit_task_name(page, task_id: str, new_name: str) -> None:
 
 
 async def delete_task(page, task_id: str) -> None:
-    section = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    section = _task_locator(page, task_id)
     await section.get_by_role("button", name=f"Delete {task_id}").click()
     await page.wait_for_timeout(2000)
 
 
 async def mark_task_complete(page, task_id: str) -> None:
     await open_task_expander(page, task_id)
-    section = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    section = _task_locator(page, task_id)
     checkbox = section.get_by_label("Is Complete")
-    await checkbox.check()
+    if not await checkbox.is_checked():
+        await checkbox.evaluate("el => el.click()")
+        await page.wait_for_timeout(500)
     apply_btn = section.get_by_role("button", name=f"Apply changes to {task_id}")
+    await apply_btn.scroll_into_view_if_needed()
     await apply_btn.click()
     await page.wait_for_timeout(3000)
 
@@ -174,14 +204,14 @@ async def mark_task_complete(page, task_id: str) -> None:
 async def add_dependency(
     page, task_id: str, predecessor_id: str, dep_type: str = "FS", lag: int = 0
 ) -> None:
-    section = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    section = _task_locator(page, task_id)
     form = section.locator('[data-testid="stForm"]').first
     await form.get_by_role("button", name="Add dependency").click()
     await page.wait_for_timeout(2000)
 
 
 async def remove_dependency(page, task_id: str, dep_id: str) -> None:
-    section = page.locator('[data-testid="stExpander"]').filter(has_text=task_id)
+    section = _task_locator(page, task_id)
     x_buttons = section.get_by_role("button", name="X")
     if await x_buttons.count() > 0:
         await x_buttons.first.click()
@@ -244,9 +274,11 @@ async def create_new_project(
 ) -> None:
     sidebar = page.locator('[data-testid="stSidebar"]')
     await sidebar.get_by_role("button", name="New Project").click()
-    await page.wait_for_timeout(1000)
+    await page.wait_for_timeout(2000)
 
     form = sidebar.locator('[data-testid="stForm"]').first
+    await form.wait_for(timeout=10000)
+
     name_input = form.get_by_label("Project name")
     await name_input.clear()
     await name_input.fill(name)
@@ -256,7 +288,7 @@ async def create_new_project(
     await slug_input.fill(slug)
 
     await form.get_by_role("button", name="Create").click()
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(5000)
 
 
 async def switch_project_discard(page, project_label: str) -> None:
@@ -305,14 +337,15 @@ async def switch_project_cancel(page, project_label: str) -> None:
 async def toggle_auto_delay_setting(page) -> None:
     sidebar = page.locator('[data-testid="stSidebar"]')
     checkbox = sidebar.get_by_label("Auto-delay on load")
-    await checkbox.click()
+    await checkbox.evaluate("el => el.click()")
     await page.wait_for_timeout(1000)
 
 
 async def set_snapshot_count(page, count: int) -> None:
     sidebar = page.locator('[data-testid="stSidebar"]')
     input_field = sidebar.get_by_label("Keep local snapshots")
-    await input_field.triple_click()
+    await input_field.scroll_into_view_if_needed()
+    await input_field.click(click_count=3)
     await input_field.fill(str(count))
     await input_field.press("Enter")
     await page.wait_for_timeout(1000)
@@ -337,6 +370,16 @@ async def expect_task_visible(page, task_id: str, timeout: int = DEFAULT_TIMEOUT
 async def expect_task_not_visible(page, task_id: str, timeout: int = DEFAULT_TIMEOUT) -> None:
     count = await page.locator(f"text={task_id}").count()
     assert count == 0, f"Expected {task_id} to not be visible, but found {count} instances"
+
+
+async def count_complete_indicators(page) -> tuple[int, int]:
+    indicators = page.get_by_label("Complete?")
+    total = await indicators.count()
+    checked = 0
+    for i in range(total):
+        if await indicators.nth(i).is_checked():
+            checked += 1
+    return total, checked
 
 
 def load_json_from_disk(path: Path) -> dict:
