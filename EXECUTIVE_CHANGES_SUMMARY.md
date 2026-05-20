@@ -250,7 +250,7 @@ Post-initial-write hardening:
 
 ---
 
-## Push 20 -- (pending hash) -- 2026-05-20
+## Push 20 -- `91695ac` -- 2026-05-20
 
 **Steps 7a + 7b complete: "Complete?" checkbox UI + Playwright suite 25/25 green**
 

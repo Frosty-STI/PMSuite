@@ -10,7 +10,7 @@ Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
-| (pending) | 7a+7b | Complete? checkbox + Playwright 25/25 green |
+| `91695ac` | 7a+7b | Complete? checkbox + Playwright 25/25 green |
 | `abecad1` | 7    | Step 7: Playwright UI verification suite (in progress) |
 | (pending) | 6    | Streamlit editing surface, New Here? walkthrough, button descriptions, Executive Changes Summary |
 | `2b24ce7` | 6a   | Step 6 editing API primitives (add/update/delete task, add/remove dependency) |
