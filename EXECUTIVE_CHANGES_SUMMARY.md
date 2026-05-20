@@ -305,7 +305,7 @@ This push delivers the UI and rendering support for arbitrarily deep parent/chil
 
 ---
 
-## Push 22 -- (pending hash) -- 2026-05-20
+## Push 22 -- `d6e3b6b` -- 2026-05-20
 
 **Step 7c follow-up: NPDE demo hierarchy, bug fix, UI polish attempts, README rewrite**
 
