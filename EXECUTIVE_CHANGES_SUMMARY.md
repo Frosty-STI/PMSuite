@@ -279,7 +279,7 @@ Test infrastructure: session-scoped browser context with per-test pages, automat
 
 ---
 
-## Push 21 -- (pending hash) -- 2026-05-20
+## Push 21 -- `4689601` -- 2026-05-20
 
 **Step 7c complete: Child task hierarchy in Streamlit + Excel**
 

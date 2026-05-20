@@ -10,7 +10,7 @@ Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
-| (pending) | 7c   | Child task hierarchy: Streamlit Add Child Task + Parent picker, Excel row grouping |
+| `4689601` | 7c   | Child task hierarchy: Streamlit Add Child Task + Parent picker, Excel row grouping |
 | `91695ac` | 7a+7b | Complete? checkbox + Playwright 25/25 green |
 | `abecad1` | 7    | Step 7: Playwright UI verification suite (in progress) |
 | (pending) | 6    | Streamlit editing surface, New Here? walkthrough, button descriptions, Executive Changes Summary |
