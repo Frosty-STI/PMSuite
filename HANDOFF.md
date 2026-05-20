@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Steps 7a+7b are complete. The "Complete?" checkbox is live and the Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
+**Steps 7a+7b+7c are complete. Child task hierarchy is live in both Streamlit and Excel. The "Complete?" checkbox is live and the Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 7c   | Child task hierarchy: Streamlit Add Child Task + Parent picker, Excel row grouping |
 | `91695ac` | 7a+7b | Complete? checkbox + Playwright 25/25 green |
 | `abecad1` | 7    | Step 7: Playwright UI verification suite (in progress) |
 | (pending) | 6    | Streamlit editing surface, New Here? walkthrough, button descriptions, Executive Changes Summary |
@@ -57,7 +58,9 @@ Latest commits (most recent first):
 - Critical-path dark-red stripe via top/bottom border.
 - Today vertical line (thick black left border on every body cell in today's column).
 - Multi-line date column headers with weekday, date, and holiday name(s) per location.
-- Chronological row order by scheduled dates (task IDs stable, not reordered).
+- Hierarchy-aware row order: parents above children (pre-order tree walk), chronological within siblings. Task IDs stable, not reordered.
+- **Row grouping with outline levels** in Day View and Week View: child rows are collapsible under their parent via Excel's `+`/`-` toggle. Recursive levels for nested children (grandchild = level 2, etc.). Summary rows above groups.
+- Indented task names in frozen-pane Name column reflecting hierarchy depth.
 - Per-row weekend/holiday gap shading for working-day tasks; e-day tasks continuous.
 - Parent summary bars in dark gray with critical inheritance.
 
@@ -66,7 +69,9 @@ Latest commits (most recent first):
 - **Session state persistence** -- project, path, dirty flag, auto-catchup result survive reruns.
 - **Task editing** -- expander-based editors with: name, location dropdown, calendar mode, cycle time, manual start date (checkbox toggle), delay days, parent picker (filtered to prevent cycles), completion checkbox wired to `mark_task_complete` cascade.
 - **Dependency editing** -- per-task list of current predecessors with remove buttons; add-dependency form with type (FS/SS/FF/SF) and lag selection.
-- **Add Task** -- form with auto-generated TASK-NNN ID, defaults to today for manual start.
+- **Add Task** -- form with auto-generated TASK-NNN ID, defaults to today for manual start. Includes **Parent task dropdown** to assign parent_id at creation time.
+- **Add Child Task** -- button inside each task expander pre-fills parent_id, location, and calendar mode from the parent task. Creates arbitrarily deep nesting.
+- **Hierarchy display** -- tasks displayed in pre-order tree walk (parent above children), with depth-based indentation in expander labels.
 - **Delete Task** -- blocks when dependents/children exist, surfaces affected IDs.
 - **Action buttons** with concise descriptions: Validate, Save, Build Excel, Set Baseline.
 - **Dirty-state badge** -- "Save *" button styling + title badge when unsaved changes exist.
@@ -87,7 +92,7 @@ Latest commits (most recent first):
 |------|--------|-------------|
 | 7a | **Complete** | **UI: "Complete?" checkbox on collapsed task expanders** -- read-only disabled checkbox in `st.columns([8, 2])` layout, session-state sync to fix Streamlit widget caching, URL query param project loading. |
 | 7b | **Complete** | **Playwright UI verification** -- 25 tests across 10 classes, all green. Fixed subprocess pipe buffer deadlock, locator ambiguity from dependency text, and Streamlit checkbox off-viewport clicks. Screenshot-on-failure infrastructure. |
-| 7c | Pending | **Child task hierarchy in Streamlit + Excel** -- (1) **Streamlit:** Add "Add Child Task" button inside each task expander (pre-fills parent_id). Add "Parent" dropdown to the top-level Add Task form and to the task editor for re-assigning parents. Enable arbitrarily deep nesting — a child task can itself have children. Backend hierarchy already complete (`parent_id`, `has_subtasks()`, cascade, floor propagation). (2) **Excel:** Use `openpyxl` row grouping (`ws.row_dimensions.group()` with `outline_level`) so parent tasks are collapsible group headers. Child rows indent and collapse via Excel's `+`/`-` toggle. Recursive outline levels for nested children. Both Day View and Week View sheets. High-level Gantt stays clean when collapsed; detail available on expand. |
+| 7c | **Complete** | **Child task hierarchy in Streamlit + Excel** -- (1) **Streamlit:** "Add Child Task" button inside each task expander (pre-fills parent_id, location, calendar mode). "Parent task" dropdown in Add Task form. Task list displayed in hierarchy order with depth indentation. Parent picker in task editor already existed. (2) **Excel:** `xlsxwriter` row grouping with `outline_level` on Day View and Week View. `outline_settings(symbols_below=False)` puts collapse toggles on the parent row above. Indented task names in frozen-pane Name column. Recursive levels for nested children. |
 | 8 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. Parse the Excel file, map each PMSuite site to its country column (DAL→USA, MLA→Malaysia, CLARK→Philippines, AIZU→Japan, FR-BIP→Germany, TIEMA→Malaysia, TIPI→Philippines, TAI→Taiwan), and seed site-specific holidays including company holidays and local observances. For DAL (USA column empty in calendar), keep the existing `holidays` library as fallback. Update demo project files with the real calendar data. |
 | 9 | Pending | **Expand npde_demo.json** -- currently 13 tasks; target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
 | 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |

@@ -225,10 +225,11 @@ def _compute_axis(project: Project, schedule: dict[str, ScheduledTask]) -> tuple
 # -------------------------------------------------------------------------
 # Shared row writing helpers
 
-def _write_task_metadata_row(sheet, row_idx: int, task, formats) -> None:
+def _write_task_metadata_row(sheet, row_idx: int, task, formats, indent: int = 0) -> None:
     """Write the seven frozen-pane metadata columns for one task row."""
     sheet.write(row_idx, 0, task.id, formats["task_id"])
-    sheet.write(row_idx, 1, task.name, formats["task_name"])
+    name_display = ("  " * indent + task.name) if indent > 0 else task.name
+    sheet.write(row_idx, 1, name_display, formats["task_name"])
     sheet.write(row_idx, 2, task.completion_location, formats["task_name"])
     sheet.write(row_idx, 3,
                 task.cycle_time_days if task.cycle_time_days is not None else "",
@@ -253,41 +254,29 @@ def _set_metadata_column_widths(sheet) -> None:
 
 
 def _gantt_task_order(project: Project, schedule: dict[str, ScheduledTask]) -> list:
-    """Tasks in user-facing Gantt row order.
+    """Tasks in hierarchy-aware Gantt row order.
 
-    Row order follows chronology, not ID creation order. A later-created task
-    keeps its stable ID but appears wherever its scheduled dates belong.
+    Parent tasks appear above their children (pre-order tree walk). Siblings
+    at the same level sort chronologically by scheduled dates. This ordering
+    enables Excel row grouping: children collapse under their parent row.
     """
-    original_index = {task.id: idx for idx, task in enumerate(project.tasks)}
 
-    def task_number(task_id: str) -> int:
-        try:
-            return int(task_id.split("-")[-1])
-        except ValueError:
-            return 999_999
-
-    def sort_key(task):
+    def _sort_key(task):
         s = schedule.get(task.id)
         if s is None:
-            return (
-                date.max,
-                _hierarchy_level(project, task.id),
-                date.max,
-                date.max,
-                task_number(task.id),
-                task.id,
-            )
-        return (
-            s.computed_start,
-            _hierarchy_level(project, task.id),
-            s.effective_finish,
-            s.computed_finish,
-            task_number(task.id),
-            original_index.get(task.id, 999_999),
-            task.id,
-        )
+            return (date.max, date.max, task.id)
+        return (s.computed_start, s.effective_finish, task.id)
 
-    return sorted(project.tasks, key=sort_key)
+    def _walk(parent_id: str | None) -> list:
+        children = [t for t in project.tasks if t.parent_id == parent_id]
+        children.sort(key=_sort_key)
+        result = []
+        for child in children:
+            result.append(child)
+            result.extend(_walk(child.id))
+        return result
+
+    return _walk(None)
 
 
 def _build_holiday_name_map(project: Project) -> dict[date, str]:
@@ -353,11 +342,13 @@ def _build_day_view(workbook, project: Project, schedule, critical_path, formats
     _set_metadata_column_widths(sheet)
     sheet.set_column(_METADATA_COL_COUNT, col - 1, 4)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
+    sheet.outline_settings(True, False, False, False)
 
     # -- Task rows --
     for row_idx, task in enumerate(_gantt_task_order(project, schedule), start=1):
-        sheet.set_row(row_idx, 30)
-        _write_task_metadata_row(sheet, row_idx, task, formats)
+        level = _hierarchy_level(project, task.id)
+        sheet.set_row(row_idx, 30, None, {"level": level} if level > 0 else None)
+        _write_task_metadata_row(sheet, row_idx, task, formats, indent=level)
         s = schedule.get(task.id)
         if not s:
             continue
@@ -471,10 +462,12 @@ def _build_week_view(workbook, project: Project, schedule, critical_path, format
     _set_metadata_column_widths(sheet)
     sheet.set_column(_METADATA_COL_COUNT, col - 1, 12)
     sheet.freeze_panes(1, _METADATA_COL_COUNT)
+    sheet.outline_settings(True, False, False, False)
 
     for row_idx, task in enumerate(_gantt_task_order(project, schedule), start=1):
-        sheet.set_row(row_idx, 30)
-        _write_task_metadata_row(sheet, row_idx, task, formats)
+        level = _hierarchy_level(project, task.id)
+        sheet.set_row(row_idx, 30, None, {"level": level} if level > 0 else None)
+        _write_task_metadata_row(sheet, row_idx, task, formats, indent=level)
         s = schedule.get(task.id)
         if not s:
             continue

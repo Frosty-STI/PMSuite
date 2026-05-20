@@ -373,21 +373,52 @@ the **predecessor's** calendar mode.
 # Task table (editable via individual task expanders)
 # ---------------------------------------------------------------------------
 
+def _hierarchy_ordered_tasks(project: Project) -> list[Task]:
+    """Pre-order tree walk: parent above children, siblings sorted by index."""
+    index_map = {t.id: i for i, t in enumerate(project.tasks)}
+
+    def _walk(parent_id: str | None) -> list[Task]:
+        children = [t for t in project.tasks if t.parent_id == parent_id]
+        children.sort(key=lambda t: index_map.get(t.id, 0))
+        result: list[Task] = []
+        for child in children:
+            result.append(child)
+            result.extend(_walk(child.id))
+        return result
+
+    return _walk(None)
+
+
+def _task_depth(project: Project, task_id: str) -> int:
+    depth = 0
+    t = project.task_by_id(task_id)
+    while t and t.parent_id:
+        depth += 1
+        t = project.task_by_id(t.parent_id)
+        if depth > 50:
+            break
+    return depth
+
+
 def _render_task_table(project: Project) -> None:
     task_ids = [t.id for t in project.tasks]
     task_labels = {t.id: f"{t.id} - {t.name}" for t in project.tasks}
+    ordered = _hierarchy_ordered_tasks(project)
 
-    for i, task in enumerate(project.tasks):
+    for i, task in enumerate(ordered):
         is_parent = project.has_subtasks(task.id)
+        depth = _task_depth(project, task.id)
+        indent = " " * depth
         prefix = "[P] " if is_parent else "    "
-        label = f"{prefix}{task.id} -- {task.name}"
+        label = f"{indent}{prefix}{task.id} -- {task.name}"
         if task.parent_id:
             label += f"  (child of {task.parent_id})"
 
+        orig_idx = next(j for j, t in enumerate(project.tasks) if t.id == task.id)
         exp_col, chk_col = st.columns([8, 2])
         with exp_col:
             with st.expander(label, expanded=False):
-                _render_task_editor(project, task, i, task_ids, task_labels, is_parent)
+                _render_task_editor(project, task, orig_idx, task_ids, task_labels, is_parent)
         with chk_col:
             ind_key = f"complete_indicator_{task.id}"
             st.session_state[ind_key] = task.is_complete
@@ -594,6 +625,24 @@ def _render_task_editor(
         except Exception as exc:
             st.error(f"Error: {exc}")
 
+    # Add Child Task button
+    if st.button(f"Add child task under {task.id}", key=f"addchild_{task.id}"):
+        try:
+            child = api.add_task(
+                project,
+                name=f"New subtask of {task.name}",
+                completion_location=task.completion_location,
+                calendar_mode=task.calendar_mode,
+                cycle_time_days=1,
+                manual_start_date=task.manual_start_date or date.today(),
+                parent_id=task.id,
+            )
+            _mark_dirty()
+            st.success(f"Added child {child.id} under {task.id}")
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
+
     # Delete button
     if st.button(f"Delete {task.id}", key=f"delete_{task.id}", type="secondary"):
         try:
@@ -622,9 +671,16 @@ def _render_add_task(project: Project) -> None:
             with col2:
                 cycle = st.number_input("Cycle time (days)", min_value=1, value=1)
                 manual_start = st.date_input("Manual start date", value=date.today())
+                parent_options = ["(none)"] + [t.id for t in project.tasks]
+                parent_choice = st.selectbox(
+                    "Parent task",
+                    parent_options,
+                    format_func=lambda x: x if x == "(none)" else f"{x} - {next((t.name for t in project.tasks if t.id == x), x)}",
+                )
 
             if st.form_submit_button("Add task", type="primary"):
                 try:
+                    parent_id = None if parent_choice == "(none)" else parent_choice
                     task = api.add_task(
                         project,
                         name=name,
@@ -632,6 +688,7 @@ def _render_add_task(project: Project) -> None:
                         calendar_mode=calendar,
                         cycle_time_days=cycle,
                         manual_start_date=manual_start,
+                        parent_id=parent_id,
                     )
                     _mark_dirty()
                     st.success(f"Added {task.id} - {task.name}")

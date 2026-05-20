@@ -279,26 +279,26 @@ Test infrastructure: session-scoped browser context with per-test pages, automat
 
 ---
 
-## Pending for next session: Step 7c — Child task hierarchy in Streamlit + Excel
+## Push 21 -- (pending hash) -- 2026-05-20
 
-**What to implement:**
+**Step 7c complete: Child task hierarchy in Streamlit + Excel**
 
-### Streamlit UI — "Add Child Task" button + parent picker:
-- Add an **"Add Child Task"** button inside each task's expander. Clicking it opens an inline form (or pre-fills the Add Task form) with `parent_id` set to the current task. This enables arbitrarily deep nesting — a child task can itself have an "Add Child Task" button.
-- Add a **"Parent" dropdown** to the existing Add Task form (top-level) so users can also assign parent_id from the general form. Filter options to prevent cycles.
-- Add a **"Parent" picker** to the task editor (inside each expander) so users can re-assign or remove a task's parent after creation.
-- The backend already supports `Task.parent_id`, `project.has_subtasks()`, parent completion cascade with preserve-earlier-children, and dependency/manual-start floor propagation from parents to descendants.
+This push delivers the UI and rendering support for arbitrarily deep parent/child task nesting. The backend hierarchy (`parent_id`, `has_subtasks()`, cascade, floor propagation) was already complete — this step adds the user-facing creation controls and the Excel visual grouping.
 
-### Excel — Grouped/collapsible rows with outline levels:
-- Use Excel's **row grouping** (outline levels) so parent tasks act as group headers. Child tasks are indented and collapsible via the `+`/`-` toggle in Excel's row gutter.
-- The high-level Gantt stays clean when groups are collapsed; expanding a group reveals the child-task detail rows underneath.
-- Apply outline levels recursively — a child of a child gets a deeper indent level.
-- Parent summary bars (already dark gray) remain as the visible row when collapsed.
-- Applies to both Day View and Week View sheets.
+### Streamlit UI changes (`ui/streamlit_app.py`):
 
-### Key constraints:
-- The backend hierarchy is already complete — this is purely a UI/rendering task.
-- Cycle prevention: the parent picker must exclude the task itself and all its descendants.
-- `openpyxl` supports row grouping via `ws.row_dimensions.group()` with `outline_level` parameter.
+1. **"Add Child Task" button** inside each task's expander. Pre-fills `parent_id`, `completion_location`, and `calendar_mode` from the parent task. Creates a leaf child with `cycle_time_days=1` and `manual_start_date=today` (or parent's manual start). Enables arbitrarily deep nesting — a child task's expander also has an "Add Child Task" button.
 
-**Why:** The user needs arbitrarily granular task decomposition — each NPDE program step can be broken into sub-steps, sub-sub-steps, etc. The current flat task list forces users to model everything at one level. Excel grouping keeps the executive-level Gantt clean while preserving detail for engineers.
+2. **"Parent task" dropdown** in the top-level "Add new task" form. Shows all existing task IDs with names; defaults to "(none)" for root tasks. Combined with the existing parent picker in the task editor (for re-assigning parents after creation), users now have three ways to set hierarchy: Add Child Task button, Add Task form parent dropdown, and task editor parent picker.
+
+3. **Hierarchy-ordered task display.** Tasks are shown in pre-order tree walk (parent above children), with depth-based whitespace indentation in the expander labels. Root tasks maintain their original insertion order; children appear directly below their parent.
+
+### Excel changes (`gantt_builder/excel_builder.py`):
+
+1. **Row grouping with outline levels** on Day View and Week View sheets. Child rows get `outline_level = hierarchy_depth` (level 1 for direct children, level 2 for grandchildren, etc.). Parent rows stay at level 0. `outline_settings(symbols_below=False)` puts the `+`/`-` collapse toggle on the parent row above the group, not below.
+
+2. **Hierarchy-aware row ordering.** `_gantt_task_order()` changed from flat chronological sort to a pre-order tree walk: root tasks sorted chronologically, each parent followed immediately by its children (also chronological among siblings), recursively. This ensures child rows are always adjacent to and below their parent.
+
+3. **Indented task names.** The frozen-pane Name column now indents child task names by 2 spaces per hierarchy level (`"  " * level + name`), making the tree structure visible even without the outline grouping.
+
+**Why:** NPDE programs need arbitrarily granular task decomposition — "Wafer Fab" breaks into "Lot 1 processing" and "Lot 2 processing," each of which breaks into sub-steps. The flat task list forced all tasks to one level, making the Gantt noisy for executives and lacking detail for engineers. Excel row grouping solves both: collapsed groups for the executive view, expanded detail for engineering review. The Streamlit "Add Child Task" button makes creating hierarchy as easy as clicking a button rather than manually setting parent_id.
