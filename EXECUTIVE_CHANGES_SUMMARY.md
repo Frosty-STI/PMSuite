@@ -335,7 +335,7 @@ This push delivers the UI and rendering support for arbitrarily deep parent/chil
 
 ---
 
-## Push 23 -- (pending) -- 2026-05-31
+## Push 23 -- `42ce709` -- 2026-05-31
 
 **Step 7d: UI polish -- uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency**
 
