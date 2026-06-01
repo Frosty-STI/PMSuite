@@ -408,11 +408,8 @@ def _render_task_table(project: Project) -> None:
     for i, task in enumerate(ordered):
         is_parent = project.has_subtasks(task.id)
         depth = _task_depth(project, task.id)
-        indent = " " * depth
-        prefix = "[P] " if is_parent else "    "
-        label = f"{indent}{prefix}{task.id} -- {task.name}"
-        if task.parent_id:
-            label += f"  (child of {task.parent_id})"
+        indent = "    " * depth
+        label = f"{indent}{task.id} -- {task.name}"
 
         orig_idx = next(j for j, t in enumerate(project.tasks) if t.id == task.id)
         exp_col, chk_col = st.columns([8, 2])
@@ -468,12 +465,13 @@ def _render_task_editor(
                 key=f"cycle_{task.id}",
             )
         else:
-            st.text_input(
+            st.number_input(
                 "Cycle Time (Days)",
-                value="(derived from children)",
+                value=0,
                 disabled=True,
                 key=f"cycle_{task.id}",
             )
+            st.caption("Derived from children")
             new_cycle = None
 
         has_manual_start = st.checkbox(
@@ -513,7 +511,7 @@ def _render_task_editor(
     )
     new_parent_id = None if new_parent == "(none)" else new_parent
 
-    # Completion
+    # Completion (toggle takes effect immediately)
     st.divider()
     comp_col1, comp_col2 = st.columns(2)
     with comp_col1:
@@ -523,21 +521,29 @@ def _render_task_editor(
             key=f"complete_{task.id}",
         )
     with comp_col2:
-        if new_complete:
-            default_comp_date = task.actual_completion_date or date.today()
+        if task.is_complete and task.actual_completion_date:
             new_comp_date = st.date_input(
                 "Actual Completion Date",
-                value=default_comp_date,
+                value=task.actual_completion_date,
                 key=f"compdate_{task.id}",
             )
         else:
             new_comp_date = None
-            if task.actual_completion_date:
-                st.caption("Completion date will be cleared.")
+
+    if new_complete != task.is_complete:
+        try:
+            if new_complete:
+                api.mark_task_complete(project, task.id, completion_date=date.today())
+            else:
+                api.unmark_task_complete(project, task.id)
+            _mark_dirty()
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
 
     # Dependencies
     st.divider()
-    st.markdown("**Dependencies (predecessors)**")
+    st.text("Dependencies (predecessors)")
     existing_deps = list(task.dependencies)
 
     for dep_idx, dep in enumerate(existing_deps):
@@ -612,13 +618,7 @@ def _render_task_editor(
             if new_manual_start is not None:
                 kwargs["manual_start_date"] = new_manual_start
 
-            # Handle completion toggle
-            if new_complete and not task.is_complete:
-                api.mark_task_complete(project, task.id, completion_date=new_comp_date)
-                st.session_state.last_completion_result = task.id
-            elif not new_complete and task.is_complete:
-                api.unmark_task_complete(project, task.id)
-            elif new_complete and task.is_complete and new_comp_date != task.actual_completion_date:
+            if task.is_complete and new_comp_date is not None and new_comp_date != task.actual_completion_date:
                 kwargs["actual_completion_date"] = new_comp_date
                 kwargs["is_complete"] = True
 

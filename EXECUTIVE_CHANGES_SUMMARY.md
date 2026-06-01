@@ -332,3 +332,21 @@ This push delivers the UI and rendering support for arbitrarily deep parent/chil
 5. **README.md rewritten for new-machine setup.** Step-by-step instructions covering: prerequisites, clone, venv creation (Windows PowerShell/CMD/macOS/Linux), `pip install -e ".[dev]"`, test verification (`95 passed`), Streamlit launch with `--server.headless true`, demo exploration. Added troubleshooting section for common issues (streamlit not on PATH, email prompt, PowerShell red stderr, import failures).
 
 **Why:** The NPDE demo with real hierarchy is essential for visual verification of Excel row grouping and Streamlit hierarchy display. The README rewrite ensures smooth transfer to a new laptop — every command is explicit with platform-specific variants. The unresolved UI issues are documented so the next session can tackle them without re-discovering them.
+
+---
+
+## Push 23 -- (pending) -- 2026-05-31
+
+**Step 7d: UI polish -- uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency**
+
+Four UI fixes applied to `ui/streamlit_app.py`:
+
+1. **Uniform task text rendering.** Removed the `[P]` prefix on parent tasks and the `(child of TASK-XXX)` suffix on child tasks from expander labels. All tasks now render with the same format: `TASK-XXX -- Name`. No markdown is used in task label rendering. Replaced the bold markdown `st.markdown("**Dependencies (predecessors)**")` inside task editors with plain `st.text()`.
+
+2. **Hierarchy indentation with em-spaces.** Child tasks are indented by 4 em-spaces (` `) per depth level in the expander label. Children of children indent further, making the tree structure visually obvious without needing prefixes or suffixes. Em-spaces were chosen because they render at consistent width and are not collapsed by HTML/Streamlit rendering.
+
+3. **"Is Complete" checkbox now works immediately.** Previously, toggling the "Is Complete" checkbox inside a task expander required clicking the separate "Apply changes" button to take effect. The completion toggle now fires immediately on checkbox click: checking it calls `mark_task_complete` with today's date (per design Q8a auto-fill), unchecking calls `unmark_task_complete`. The completion date is shown read-only for already-complete tasks; date changes for completed tasks still go through Apply.
+
+4. **Parent task editors match leaf task editors.** Parent tasks previously used `st.text_input(disabled=True)` for the Cycle Time field while leaf tasks used `st.number_input`. Both now use `st.number_input` (parents show 0, disabled) with a caption "Derived from children" below. The widget chrome is visually identical.
+
+**Why:** The user flagged that tasks rendered inconsistently (different prefixes and suffixes depending on parent/child status), making the task list noisy. The "Is Complete" checkbox not responding to clicks was a known issue since Push 22 -- the root cause was that completion was gated behind the Apply button, which is non-obvious UX. Making it immediate matches user expectation. The parent editor mismatch (text_input vs number_input) was a visual inconsistency that made the UI feel unfinished.
