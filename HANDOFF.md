@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Steps 7a+7b+7c are complete. All UI polish issues resolved. Child task hierarchy is live in both Streamlit and Excel. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. The app is a functional editing tool, not a read-only viewer.**
+**Step 8 (Interactive Gantt) is rendering and functional. The Frappe Gantt custom component is live inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, sidebar editing, and context menus. Three known bugs remain: (1) dependency arrow creation from the chart doesn't fire events, (2) scrollbars in the Gantt container are invisible, and (3) the overall visual design needs further polish. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. 95 backend tests pass.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 8    | Step 8: Interactive Gantt rendering + visual redesign (3 bugs fixed, CSS rewrite) |
 | `42ce709` | 7d   | UI polish: uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency |
 | `d6e3b6b` | 7c+  | NPDE demo hierarchy, auto-clear parent cycle_time, UI polish attempts, README rewrite |
 | `4689601` | 7c   | Child task hierarchy: Streamlit Add Child Task + Parent picker, Excel row grouping |
@@ -83,22 +84,71 @@ Latest commits (most recent first):
 - **New Project form** -- sidebar form with name, auto-slugged ID, timezone, default location.
 - **Project switcher dialog** -- Cancel/Discard/Save & Switch when switching with unsaved changes.
 - **Settings panel** -- sidebar toggles for auto_delay_on_load and keep_local_snapshots.
-- **"New Here?" walkthrough** -- pale green banner with 10-step guide grounded in MASTERECAP Q1-Q35. Placeholder content; will be refreshed before shipping (Step 11).
+- **"New Here?" walkthrough** -- pale green banner with 10-step guide grounded in MASTERECAP Q1-Q35. Placeholder content; will be refreshed before shipping (Step 12).
 - **Summary table** -- read-only dataframe overview above the task editors.
 - **"Complete?" indicator** -- disabled checkbox on each collapsed task row (far right) reflecting `task.is_complete`. Session-state sync ensures it updates immediately on in-session completion changes.
 - **Playwright verification** -- 25 tests across 10 classes verify all editing flows end-to-end. Automatic screenshot-on-failure. Run: `pytest tests/test_streamlit_playwright.py -m playwright`.
+
+### Interactive Gantt (Step 8, rendering with known bugs)
+
+- **Frappe Gantt custom component** -- React wrapper around `frappe-gantt` v1.2.2, built with Vite, served as a Streamlit custom component from `components/gantt_chart/frontend/build/`.
+- **Two-tab layout** -- "Visualized Project Editing" (Gantt chart + sidebar) and "Text Project Editing" (expander editors). Both tabs operate on the same `st.session_state.project`.
+- **Toolbar** -- Add Task button, Day/Week/Month view mode switcher, Today button, search box, double-click hint text.
+- **Status-colored bars** -- steel blue (planned), teal-green (completed), amber (delayed), signal red (overdue), dark charcoal (parent). Critical path bars have dark red border.
+- **Click/drag interactions** -- click selects task (opens sidebar editor), drag moves start date, drag edge resizes duration. Events fire back to Python via `Streamlit.setComponentValue()`.
+- **Sidebar editor** -- 30% right panel with full task editing (same fields as the text editor), plus Add Child Task and Delete Task buttons.
+- **Context menu** -- right-click on a bar shows Edit / Mark Complete / Add Child / Delete.
+- **Search highlighting** -- tasks matching the query stay fully opaque; non-matching tasks fade to 20% opacity.
+- **Today marker** -- dark vertical line with date badge.
+- **Dependency arrows** -- quiet gray at 60% opacity, rounded joins.
+- **CSS theme** -- "Industrial Precision" theme with CSS variable overrides for Frappe Gantt, proper specificity matching, subtle grid, refined popup.
+- **Design spec:** [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md) (38 grilling-session decisions).
+
+#### Known bugs (next session priorities)
+
+1. **Dependency arrow creation broken** -- Drawing dependency arrows between bars in the Gantt chart does not fire events back to Python. The base `frappe-gantt` v1.2.2 does not have `on_dependency_create` callbacks (that feature was in `@workiom/frappe-gantt` which has a fatal ES module bug). Dependencies must currently be added via the sidebar panel. **Use `/diagnose` to investigate whether the base library supports drag-to-connect or if a workaround is needed.**
+
+2. **Scrollbars invisible in Gantt container** -- The horizontal and vertical scrollbars on the `.gantt-container` are not rendering visually, even though the container IS scrollable (you can scroll with mouse wheel or trackpad). Likely a CSS issue with the custom theme or Frappe's `overflow` settings conflicting with the iframe context. **Use `/diagnose` to check CSS `overflow` and `::-webkit-scrollbar` rules.**
+
+3. **Visual design needs further polish** -- The current theme is functional but needs refinement: bar label readability on narrow bars, grid density in Day view, weekend/holiday shading, hover/selected state contrast. **Use `/frontend-design` for the visual iteration pass.**
 
 ## Roadmap (remaining steps)
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 7a | **Complete** | **UI: "Complete?" checkbox on collapsed task expanders** -- read-only disabled checkbox in `st.columns([8, 2])` layout, session-state sync to fix Streamlit widget caching, URL query param project loading. |
-| 7b | **Complete** | **Playwright UI verification** -- 25 tests across 10 classes, all green. Fixed subprocess pipe buffer deadlock, locator ambiguity from dependency text, and Streamlit checkbox off-viewport clicks. Screenshot-on-failure infrastructure. |
-| 7c | **Complete** | **Child task hierarchy in Streamlit + Excel** -- (1) **Streamlit:** "Add Child Task" button inside each task expander (pre-fills parent_id, location, calendar mode). "Parent task" dropdown in Add Task form. Task list displayed in hierarchy order with depth indentation. Parent picker in task editor already existed. (2) **Excel:** `xlsxwriter` row grouping with `outline_level` on Day View and Week View. `outline_settings(symbols_below=False)` puts collapse toggles on the parent row above. Indented task names in frozen-pane Name column. Recursive levels for nested children. |
-| 8 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. Parse the Excel file, map each PMSuite site to its country column (DAL→USA, MLA→Malaysia, CLARK→Philippines, AIZU→Japan, FR-BIP→Germany, TIEMA→Malaysia, TIPI→Philippines, TAI→Taiwan), and seed site-specific holidays including company holidays and local observances. For DAL (USA column empty in calendar), keep the existing `holidays` library as fallback. Update demo project files with the real calendar data. |
-| 9 | Pending | **Expand npde_demo.json** -- currently 17 tasks (13 original + 4 hierarchy additions); target ~30-50 tasks modeling a generic NPDE program using public-domain semiconductor flow knowledge. |
-| 10 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
-| 11 | Pending | **Final Walkthrough Refresh** -- update the "New Here?" walkthrough content in `streamlit_app.py` to reflect the final shipped feature set, polish wording for non-technical users, and verify every step still matches the implemented behavior. Run after all other steps are complete. |
+| 8 | **In progress** | **Interactive Gantt editing surface** -- Rendering works. Three bugs remain (see "Known bugs" above). Design spec: [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md). |
+| 9 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. |
+| 10 | Pending | **Expand npde_demo.json** -- currently 17 tasks; target ~30-50 tasks modeling a generic NPDE program. |
+| 11 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
+| 12 | Pending | **Final Walkthrough Refresh** -- update "New Here?" walkthrough content to reflect the final shipped feature set. |
+
+## Step 8 -- bugs fixed in this session
+
+Three rendering bugs were diagnosed and fixed using Playwright-based automation to inspect the component iframe:
+
+### Bug 1: `classList.add()` crash (fatal)
+
+**Symptom:** Gantt iframe rendered at 0 height. No chart visible.
+
+**Root cause:** `_prepare_gantt_data()` in `streamlit_app.py` builds CSS class strings with spaces (e.g., `"overdue critical"`, `"planned parent-task"`). Frappe Gantt's `Bar.refresh()` at `bar.js:16` calls `this.group.classList.add(this.task.custom_class)`, which throws `InvalidCharacterError` because `classList.add()` rejects tokens containing spaces.
+
+**Fix:** `GanttComponent.jsx` temporarily monkey-patches `DOMTokenList.prototype.add` during Gantt initialization to split space-separated tokens into individual class names, restored in a `finally` block.
+
+### Bug 2: `calc(100vh - 200px)` in iframe (height collapse)
+
+**Symptom:** Even the error message from Bug 1 was invisible — the container had negative max-height.
+
+**Root cause:** The container used `maxHeight: "calc(100vh - 200px)"`. Inside a Streamlit component iframe, `100vh` equals the iframe's own height (initially 0), producing `calc(0px - 200px) = -200px`.
+
+**Fix:** Removed `maxHeight` and `overflowY: auto` from the container. Let `Streamlit.setFrameHeight()` handle iframe sizing naturally.
+
+### Bug 3: CSS specificity loss (bars invisible)
+
+**Symptom:** Bars rendered as white rectangles on white background — invisible.
+
+**Root cause:** Frappe Gantt's CSS uses `.gantt .bar-wrapper .bar { fill: var(--g-bar-color) }` (specificity 0,3,0). The theme CSS used `.gantt .bar { fill: #8FB6E1 }` (0,2,0) which loses. The CSS variable `--g-bar-color` defaulted to `#fff` (white).
+
+**Fix:** Complete CSS rewrite. Override Frappe's CSS variables at `:root` level. All bar-fill rules now match Frappe specificity (`.gantt .bar-wrapper.STATUS .bar`).
 
 ## Local layout
 
@@ -106,6 +156,7 @@ Latest commits (most recent first):
 C:\Users\Frosty\PMSuite\
 ├── HANDOFF.md                        # this file
 ├── EXECUTIVE_CHANGES_SUMMARY.md      # every push with detailed explanations
+├── INTERACTIVE_SURFACE.md            # Step 8 design spec (38 grilling-session decisions)
 ├── MASTERECAP.md                     # all design decisions (Q1-Q35)
 ├── DESIGN.md                         # architecture-level rationale
 ├── API.md                            # Python API contract
@@ -117,6 +168,20 @@ C:\Users\Frosty\PMSuite\
 ├── LICENSE                           # MIT
 ├── pyproject.toml
 ├── .gitignore
+├── components/                       # Step 8 -- Streamlit custom components
+│   ├── __init__.py
+│   └── gantt_chart/
+│       ├── __init__.py               # st_gantt() Python wrapper
+│       └── frontend/
+│           ├── package.json
+│           ├── vite.config.js
+│           ├── index.html
+│           ├── src/
+│           │   ├── index.jsx          # entry point (withStreamlitConnection)
+│           │   ├── GanttComponent.jsx # main component (StreamlitComponentBase)
+│           │   └── gantt-theme.css    # Industrial Precision CSS theme
+│           ├── build/                 # Vite production build (COMMITTED for runtime)
+│           └── node_modules/          # GITIGNORED
 ├── gantt_builder/
 │   ├── __init__.py
 │   ├── api.py                        # public API surface (re-exports all modules)
@@ -136,26 +201,26 @@ C:\Users\Frosty\PMSuite\
 │   └── validation.py                 # two-tier collect validation
 ├── ui/
 │   ├── __init__.py
-│   └── streamlit_app.py              # full editing surface (Step 6)
-├── tests/                            # 12 backend test files (95 tests) + 2 Playwright files (23 tests)
+│   └── streamlit_app.py              # full editing surface (Step 6) + Gantt tabs (Step 8)
+├── tests/                            # 12 backend test files (95 tests) + 2 Playwright files (25 tests)
 │   ├── fixtures/
-│   │   └── npde_playwright_test_fixture.json  # Playwright test fixture (past/future dates)
-│   ├── playwright_helpers.py         # composable async helpers for Playwright tests
-│   ├── test_streamlit_playwright.py  # 23 Playwright UI tests (10 classes, 18 flows)
-│   ├── test_api.py                   # end-to-end pipeline
-│   ├── test_baseline.py              # 5 tests
-│   ├── test_completion.py            # 15 tests
-│   ├── test_critical_path.py         # 8 tests
-│   ├── test_delays.py                # 19 tests
-│   ├── test_dependencies.py          # 12 tests
-│   ├── test_editing.py               # 11 tests
-│   ├── test_excel_builder.py         # structural assertions
-│   ├── test_models.py                # pydantic validation
-│   ├── test_project_io.py            # I/O round-trip
-│   └── test_validation.py            # logical validation
+│   │   └── npde_playwright_test_fixture.json
+│   ├── playwright_helpers.py
+│   ├── test_streamlit_playwright.py
+│   ├── test_api.py
+│   ├── test_baseline.py
+│   ├── test_completion.py
+│   ├── test_critical_path.py
+│   ├── test_delays.py
+│   ├── test_dependencies.py
+│   ├── test_editing.py
+│   ├── test_excel_builder.py
+│   ├── test_models.py
+│   ├── test_project_io.py
+│   └── test_validation.py
 ├── examples/
 │   ├── small_demo.json               # 7 tasks, DAL only, 27 US holidays
-│   └── npde_demo.json                # 13 tasks, 5 locations, 173 holidays
+│   └── npde_demo.json                # 17 tasks, 5 locations, 173 holidays
 ├── scripts/                          # one-off migration/rebuild utilities
 ├── projects/                         # GITIGNORED -- user project JSONs
 │   └── .backups/                     # rotating snapshots
@@ -178,8 +243,12 @@ C:\Users\Frosty\PMSuite\
 
 1. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
 2. Read `EXECUTIVE_CHANGES_SUMMARY.md` for the history of every push.
-3. Run `pytest -q --ignore=tests/test_streamlit_playwright.py` from `C:\Users\Frosty\PMSuite` -- should show 95 backend tests passing. Optionally run `pytest tests/test_streamlit_playwright.py -m playwright` for the 25 Playwright UI tests (~4 min).
-4. Check the roadmap above for the next pending step and start there.
+3. Run `pytest -q --ignore=tests/test_streamlit_playwright.py` from `C:\Users\Frosty\PMSuite` -- should show 95 backend tests passing.
+4. **Three bugs to fix** (see "Known bugs" above):
+   - **Dependency arrows:** Use `/diagnose` to determine if base `frappe-gantt` v1.2.2 supports drag-to-connect or if a JS-side workaround is needed. Then use `/verify` to confirm the fix works in the live app.
+   - **Scrollbars:** Use `/diagnose` to trace the CSS `overflow` and scrollbar rendering issue in the iframe context. Then use `/verify` to confirm scrollbars appear.
+   - **Visual polish:** Use `/frontend-design` for the next visual iteration pass after the bugs are fixed.
+5. After fixing bugs, commit, update `EXECUTIVE_CHANGES_SUMMARY.md`, and push.
 
 ## Critical knowledge for next agent
 
@@ -190,8 +259,16 @@ C:\Users\Frosty\PMSuite\
 - **Tests run from PowerShell** with `python -m pytest -q "C:\Users\Frosty\PMSuite\tests" --rootdir "C:\Users\Frosty\PMSuite"`.
 - **Pydantic v2 model serialization** uses `model_dump(mode="json", exclude_defaults=False, exclude_none=False)` for canonical output. Every save updates `project.updated_at` automatically.
 - **Demo project files get rewritten** when run through save_project -- this is intentional (canonical formatting + updated_at). Don't revert.
-- **Color palette is locked** at MASTERECAP Q26a values. Don't redecorate without an explicit user ask.
-- **MANDATORY: Update EXECUTIVE_CHANGES_SUMMARY.md with every push to GitHub.** Every commit that gets pushed must have a corresponding entry in `EXECUTIVE_CHANGES_SUMMARY.md` documenting what changed and why. Use the same format as existing entries: `## Push N -- hash -- date`, followed by a bold title, detailed explanation, and a "Why" paragraph. This is a non-negotiable requirement -- do not push without updating this file.
+- **MANDATORY: Update EXECUTIVE_CHANGES_SUMMARY.md with every push to GitHub.** Every commit that gets pushed must have a corresponding entry documenting what changed and why. Use the same format as existing entries.
+
+### Step 8-specific knowledge
+
+- **Component build:** `cd C:\Users\Frosty\PMSuite\components\gantt_chart\frontend && npx vite build` — outputs to `build/`.
+- **Dev mode toggle:** Set `_RELEASE = False` in `components/gantt_chart/__init__.py` and run `npm start` for Vite dev server on port 3000.
+- **`INTERACTIVE_SURFACE.md`** contains all 38 design decisions from the grilling session. It is the spec for Step 8.
+- **Frappe Gantt v1.2.2** is the base library. The `@workiom/frappe-gantt` fork has a fatal `const` reassignment bug in its ES build and cannot be used. Base frappe-gantt lacks `on_dependency_create` callbacks.
+- **CSS specificity matters.** Frappe uses `.gantt .bar-wrapper .bar` (0,3,0). Any bar color overrides must match this specificity. The current theme overrides Frappe CSS variables at `:root` AND uses matching-specificity selectors.
+- **`classList.add()` monkey-patch** in `GanttComponent.jsx` is load-bearing — removing it will crash the Gantt for any task with multiple CSS classes (overdue+critical, planned+parent-task, etc.).
 
 ## Tone the user expects
 

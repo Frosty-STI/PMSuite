@@ -24,6 +24,14 @@ from gantt_builder import api  # noqa: E402
 from gantt_builder.errors import GanttError, ValidationFailure  # noqa: E402
 from gantt_builder.locations import LOCATIONS, LOCATION_DISPLAY, DEFAULT_WORK_WEEKS  # noqa: E402
 from gantt_builder.models import Project, ProjectMeta, Settings, Task  # noqa: E402
+from gantt_builder.scheduler import run_schedule  # noqa: E402
+from gantt_builder.critical_path import compute_critical_path  # noqa: E402
+
+COMPONENTS_DIR = ROOT / "components"
+if str(COMPONENTS_DIR) not in sys.path:
+    sys.path.insert(0, str(COMPONENTS_DIR))
+
+from gantt_chart import st_gantt  # noqa: E402
 
 
 PROJECTS_DIR = ROOT / "projects"
@@ -904,6 +912,550 @@ def _render_sidebar() -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Gantt View — data preparation
+# ---------------------------------------------------------------------------
+
+def _prepare_gantt_data(project: Project) -> tuple[list[dict], list[dict]]:
+    """Convert project tasks + scheduler output into Frappe Gantt format."""
+    try:
+        schedule = run_schedule(project)
+        cpm = compute_critical_path(project, schedule)
+        critical_ids = cpm.critical_task_ids
+    except Exception:
+        schedule = {}
+        critical_ids = set()
+
+    gantt_tasks = []
+    gantt_deps = []
+
+    for task in project.tasks:
+        sched = schedule.get(task.id)
+        is_parent = project.has_subtasks(task.id)
+        is_crit = task.id in critical_ids
+
+        start_str = str(sched.computed_start) if sched else str(task.manual_start_date or date.today())
+        end_str = str(sched.effective_finish) if sched else str(task.manual_start_date or date.today())
+
+        if task.is_complete:
+            status = "Complete"
+            css_class = "completed"
+        elif sched and sched.effective_finish < date.today() and not task.is_complete:
+            status = f"Overdue by {(date.today() - sched.effective_finish).days} days"
+            css_class = "overdue"
+        elif task.delay_days > 0:
+            status = f"Delayed +{task.delay_days} days"
+            css_class = "delayed"
+        else:
+            status = "On track"
+            css_class = "planned"
+
+        if is_parent:
+            css_class += " parent-task"
+        if is_crit:
+            css_class += " critical"
+
+        progress = 100 if task.is_complete else 0
+
+        gantt_tasks.append({
+            "id": task.id,
+            "name": task.name,
+            "start": start_str,
+            "end": end_str,
+            "progress": progress,
+            "custom_class": css_class,
+            "location": task.completion_location,
+            "status": status,
+            "is_complete": task.is_complete,
+            "parent_id": task.parent_id,
+            "hierarchy_level": _task_depth(project, task.id),
+        })
+
+        for dep in task.dependencies:
+            gantt_deps.append({
+                "from_id": dep.id,
+                "to_id": task.id,
+                "dep_type": dep.type,
+            })
+
+    return gantt_tasks, gantt_deps
+
+
+def _get_search_placeholder(project: Project) -> str:
+    """Build a contextual placeholder from actual project data."""
+    examples = []
+    if project.tasks:
+        examples.append(project.tasks[0].id)
+        examples.append(f'"{project.tasks[0].name}"')
+        locs = {t.completion_location for t in project.tasks}
+        if locs:
+            examples.append(f'"{sorted(locs)[0]}"')
+    return f'Search by ID, name, or location (e.g., {", ".join(examples)})'
+
+
+# ---------------------------------------------------------------------------
+# Gantt View — sidebar detail panel
+# ---------------------------------------------------------------------------
+
+def _render_gantt_sidebar_editor(project: Project, task_id: str) -> None:
+    """Render the full task editor in the right sidebar panel."""
+    task = project.task_by_id(task_id)
+    if task is None:
+        st.info("Task not found. It may have been deleted.")
+        return
+
+    task_ids = [t.id for t in project.tasks]
+    task_labels = {t.id: f"{t.id} - {t.name}" for t in project.tasks}
+    is_parent = project.has_subtasks(task.id)
+
+    st.subheader(f"{task.id} — {task.name}")
+
+    new_name = st.text_input("Name", value=task.name, key=f"gv_name_{task.id}")
+
+    loc_options = LOCATIONS
+    loc_idx = loc_options.index(task.completion_location) if task.completion_location in loc_options else 0
+    new_location = st.selectbox(
+        "Location", loc_options, index=loc_idx,
+        format_func=lambda x: f"{x} - {LOCATION_DISPLAY.get(x, x)}",
+        key=f"gv_loc_{task.id}",
+    )
+
+    new_calendar = st.selectbox(
+        "Calendar Mode", ["working_days", "e_days"],
+        index=0 if task.calendar_mode == "working_days" else 1,
+        key=f"gv_cal_{task.id}",
+    )
+
+    if not is_parent:
+        new_cycle = st.number_input(
+            "Cycle Time (Days)", min_value=1,
+            value=task.cycle_time_days or 1, key=f"gv_cycle_{task.id}",
+        )
+    else:
+        st.number_input("Cycle Time (Days)", value=0, disabled=True, key=f"gv_cycle_{task.id}")
+        st.caption("Derived from children")
+        new_cycle = None
+
+    has_manual_start = st.checkbox(
+        "Has manual start date",
+        value=task.manual_start_date is not None,
+        key=f"gv_has_mstart_{task.id}",
+    )
+    if has_manual_start:
+        new_manual_start = st.date_input(
+            "Manual Start Date",
+            value=task.manual_start_date or date.today(),
+            key=f"gv_mstart_{task.id}",
+        )
+    else:
+        new_manual_start = None
+
+    new_delay = st.number_input(
+        "Delay Days", min_value=0, value=task.delay_days, key=f"gv_delay_{task.id}",
+    )
+
+    # Parent picker
+    potential_parents = ["(none)"] + [
+        tid for tid in task_ids
+        if tid != task.id and tid not in project.all_descendant_ids(task.id)
+    ]
+    current_parent_idx = 0
+    if task.parent_id and task.parent_id in potential_parents:
+        current_parent_idx = potential_parents.index(task.parent_id)
+    new_parent = st.selectbox(
+        "Parent", potential_parents, index=current_parent_idx, key=f"gv_parent_{task.id}",
+    )
+    new_parent_id = None if new_parent == "(none)" else new_parent
+
+    # Completion
+    st.divider()
+    comp_col1, comp_col2 = st.columns(2)
+    with comp_col1:
+        new_complete = st.checkbox("Is Complete", value=task.is_complete, key=f"gv_complete_{task.id}")
+    with comp_col2:
+        if task.is_complete and task.actual_completion_date:
+            new_comp_date = st.date_input(
+                "Actual Completion Date", value=task.actual_completion_date,
+                key=f"gv_compdate_{task.id}",
+            )
+        else:
+            new_comp_date = None
+
+    if new_complete != task.is_complete:
+        try:
+            if new_complete:
+                api.mark_task_complete(project, task.id, completion_date=date.today())
+            else:
+                api.unmark_task_complete(project, task.id)
+            _mark_dirty()
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
+
+    # Dependencies
+    st.divider()
+    st.text("Dependencies (predecessors)")
+    for dep in task.dependencies:
+        dcol1, dcol2 = st.columns([4, 1])
+        with dcol1:
+            st.text(f"{task_labels.get(dep.id, dep.id)} | {dep.type} | Lag: {dep.lag_days}")
+        with dcol2:
+            if st.button("X", key=f"gv_remdep_{task.id}_{dep.id}"):
+                api.remove_dependency(project, task.id, dep.id)
+                _mark_dirty()
+                st.rerun()
+
+    available_deps = [
+        tid for tid in task_ids
+        if tid != task.id and not any(d.id == tid for d in task.dependencies)
+    ]
+    if available_deps:
+        with st.form(f"gv_add_dep_form_{task.id}"):
+            adcol1, adcol2, adcol3 = st.columns([3, 2, 2])
+            with adcol1:
+                new_dep_id = st.selectbox(
+                    "Add predecessor", available_deps,
+                    format_func=lambda x: task_labels.get(x, x),
+                    key=f"gv_newdep_{task.id}",
+                )
+            with adcol2:
+                new_dep_type = st.selectbox("Type", ["FS", "SS", "FF", "SF"], key=f"gv_newdeptype_{task.id}")
+            with adcol3:
+                new_dep_lag = st.number_input("Lag (days)", value=0, key=f"gv_newdeplag_{task.id}")
+            if st.form_submit_button("Add dependency"):
+                try:
+                    api.add_dependency(project, task.id, new_dep_id, type=new_dep_type, lag_days=int(new_dep_lag))
+                    _mark_dirty()
+                    st.rerun()
+                except GanttError as exc:
+                    st.error(f"{exc.error_code}: {exc.message}")
+
+    # Apply changes
+    st.divider()
+    if st.button(f"Apply changes", key=f"gv_apply_{task.id}", type="primary", use_container_width=True):
+        try:
+            kwargs = {
+                "name": new_name,
+                "completion_location": new_location,
+                "calendar_mode": new_calendar,
+                "delay_days": new_delay,
+                "parent_id": new_parent_id,
+            }
+            if not is_parent:
+                kwargs["cycle_time_days"] = new_cycle
+            if new_manual_start is not None:
+                kwargs["manual_start_date"] = new_manual_start
+            if task.is_complete and new_comp_date is not None and new_comp_date != task.actual_completion_date:
+                kwargs["actual_completion_date"] = new_comp_date
+                kwargs["is_complete"] = True
+
+            api.update_task(project, task.id, **kwargs)
+            _mark_dirty()
+            st.success(f"Updated {task.id}")
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
+
+    # Add child task
+    if st.button(f"Add child task", key=f"gv_addchild_{task.id}", use_container_width=True):
+        try:
+            child = api.add_task(
+                project, name=f"New subtask of {task.name}",
+                completion_location=task.completion_location,
+                calendar_mode=task.calendar_mode,
+                cycle_time_days=1,
+                manual_start_date=task.manual_start_date or date.today(),
+                parent_id=task.id,
+            )
+            if task.cycle_time_days is not None:
+                api.update_task(project, task.id, cycle_time_days=None)
+            _mark_dirty()
+            st.success(f"Added child {child.id}")
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
+
+    # Delete task
+    if st.button(f"Delete {task.id}", key=f"gv_delete_{task.id}", use_container_width=True):
+        try:
+            api.delete_task(project, task.id)
+            st.session_state.gantt_selected_task = None
+            _mark_dirty()
+            st.rerun()
+        except GanttError as exc:
+            st.error(f"{exc.error_code}: {exc.message}")
+
+
+# ---------------------------------------------------------------------------
+# Gantt View — error toast
+# ---------------------------------------------------------------------------
+
+_ERROR_EXAMPLES = {
+    "CIRCULAR_DEPENDENCY": (
+        "Circular Dependency",
+        "The tasks form a dependency loop. For example, if TASK-A depends on "
+        "TASK-B which depends on TASK-C which depends on TASK-A, no task can "
+        "start. Remove one dependency to break the cycle.",
+    ),
+    "PARENT_HAS_CYCLE_TIME": (
+        "Parent Has Cycle Time",
+        "A parent task's duration is derived from its children. You cannot set "
+        "a cycle time on a task that has subtasks. Remove the cycle time or "
+        "delete the child tasks first.",
+    ),
+    "TASK_DELETION_BLOCKED": (
+        "Deletion Blocked",
+        "This task cannot be deleted because other tasks depend on it or it "
+        "has child tasks. Remove the dependencies or child tasks first.",
+    ),
+    "UNANCHORED_TASK": (
+        "Unanchored Task",
+        "A leaf task needs either a manual start date or at least one "
+        "dependency to anchor it in time. Set a start date or add a "
+        "predecessor dependency.",
+    ),
+}
+
+
+def _render_gantt_error(error_code: str, message: str) -> None:
+    """Render an error toast with expandable detail."""
+    short_label, example = _ERROR_EXAMPLES.get(
+        error_code, (error_code.replace("_", " ").title(), message)
+    )
+    with st.container():
+        st.error(f"**Error — {short_label}**")
+        with st.expander("Details & example"):
+            st.markdown(f"**What happened:** {message}")
+            st.markdown(f"**Example:** {example}")
+
+
+# ---------------------------------------------------------------------------
+# Gantt View — handle events from JS component
+# ---------------------------------------------------------------------------
+
+def _handle_gantt_event(project: Project, event: dict) -> None:
+    """Process an event from the Frappe Gantt component."""
+    if event is None:
+        return
+
+    event_type = event.get("type")
+
+    if event_type == "click":
+        st.session_state.gantt_selected_task = event.get("task_id")
+
+    elif event_type == "after_date_change":
+        task_id = event.get("task_id")
+        new_start = event.get("new_start")
+        new_end = event.get("new_end")
+        if task_id and new_start:
+            try:
+                start_date = date.fromisoformat(new_start)
+                api.update_task(project, task_id, manual_start_date=start_date)
+                if new_end:
+                    end_date = date.fromisoformat(new_end)
+                    days = (end_date - start_date).days + 1
+                    if days >= 1:
+                        task = project.task_by_id(task_id)
+                        if task and not project.has_subtasks(task_id):
+                            api.update_task(project, task_id, cycle_time_days=days)
+                _mark_dirty()
+                st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+    elif event_type == "dependency_create":
+        from_id = event.get("from_id")
+        to_id = event.get("to_id")
+        dep_type = event.get("dep_type", "FS")
+        if from_id and to_id:
+            try:
+                api.add_dependency(project, to_id, from_id, type=dep_type, lag_days=0)
+                _mark_dirty()
+                st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+    elif event_type == "dependency_delete":
+        from_id = event.get("from_id")
+        to_id = event.get("to_id")
+        if from_id and to_id:
+            try:
+                api.remove_dependency(project, to_id, from_id)
+                _mark_dirty()
+                st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+    elif event_type == "context_menu":
+        task_id = event.get("task_id")
+        action = event.get("action")
+        if not task_id:
+            return
+
+        if action == "edit":
+            st.session_state.gantt_selected_task = task_id
+
+        elif action == "toggle_complete":
+            try:
+                task = project.task_by_id(task_id)
+                if task and task.is_complete:
+                    api.unmark_task_complete(project, task_id)
+                else:
+                    api.mark_task_complete(project, task_id, completion_date=date.today())
+                _mark_dirty()
+                st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+        elif action == "add_child":
+            try:
+                task = project.task_by_id(task_id)
+                if task:
+                    child = api.add_task(
+                        project, name=f"New subtask of {task.name}",
+                        completion_location=task.completion_location,
+                        calendar_mode=task.calendar_mode,
+                        cycle_time_days=1,
+                        manual_start_date=task.manual_start_date or date.today(),
+                        parent_id=task.id,
+                    )
+                    if task.cycle_time_days is not None:
+                        api.update_task(project, task.id, cycle_time_days=None)
+                    _mark_dirty()
+                    st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+        elif action == "delete":
+            try:
+                api.delete_task(project, task_id)
+                st.session_state.gantt_selected_task = None
+                _mark_dirty()
+                st.rerun()
+            except GanttError as exc:
+                _render_gantt_error(exc.error_code, exc.message)
+
+    elif event_type == "double_click_empty":
+        st.session_state.gantt_add_task_mode = True
+
+
+# ---------------------------------------------------------------------------
+# Gantt View — full tab renderer
+# ---------------------------------------------------------------------------
+
+def _render_gantt_view(project: Project) -> None:
+    """Render the Visualized Project Editing tab."""
+    gantt_tasks, gantt_deps = _prepare_gantt_data(project)
+
+    # -- Toolbar --
+    tb1, tb2, tb3, tb4, tb5 = st.columns([1, 2, 1, 3, 4])
+    with tb1:
+        if st.button("+ Add Task", key="gv_add_task_btn", use_container_width=True):
+            st.session_state.gantt_add_task_mode = True
+    with tb2:
+        view_mode = st.segmented_control(
+            "View", ["Day", "Week", "Month"],
+            default=st.session_state.get("gantt_view_mode", "Week"),
+            key="gv_view_mode_ctrl",
+            label_visibility="collapsed",
+        )
+        if view_mode:
+            st.session_state.gantt_view_mode = view_mode
+    with tb3:
+        today_clicked = st.button("Today", key="gv_today_btn", use_container_width=True)
+    with tb4:
+        placeholder = _get_search_placeholder(project)
+        search = st.text_input(
+            "Search", value="", placeholder=placeholder,
+            key="gv_search", label_visibility="collapsed",
+        )
+    with tb5:
+        st.markdown(
+            '<span style="color: #bbb; font-style: italic; font-size: 13px;">'
+            'Double click chart to add task at cursor location</span>',
+            unsafe_allow_html=True,
+        )
+
+    current_view = st.session_state.get("gantt_view_mode", "Week")
+    selected_task = st.session_state.get("gantt_selected_task")
+    sidebar_visible = st.session_state.get("gantt_sidebar_visible", True)
+
+    # -- Main area: chart + sidebar --
+    if sidebar_visible and gantt_tasks:
+        chart_col, sidebar_col = st.columns([7, 3])
+    else:
+        chart_col = st.container()
+        sidebar_col = None
+
+    with chart_col:
+        event = st_gantt(
+            tasks=gantt_tasks,
+            dependencies=gantt_deps,
+            view_mode=current_view,
+            selected_task_id=selected_task,
+            today_scroll=today_clicked,
+            search_query=search,
+            sidebar_visible=sidebar_visible,
+            key="pmsuite_gantt",
+        )
+        _handle_gantt_event(project, event)
+
+    if sidebar_col is not None:
+        with sidebar_col:
+            # Sidebar toggle
+            if st.button("Hide sidebar ›", key="gv_hide_sidebar", use_container_width=True):
+                st.session_state.gantt_sidebar_visible = False
+                st.rerun()
+
+            if st.session_state.get("gantt_add_task_mode"):
+                st.subheader("Add New Task")
+                with st.form("gv_add_task_form"):
+                    name = st.text_input("Task name", value="New task")
+                    location = st.selectbox(
+                        "Location", LOCATIONS,
+                        format_func=lambda x: f"{x} - {LOCATION_DISPLAY.get(x, x)}",
+                    )
+                    calendar = st.selectbox("Calendar mode", ["working_days", "e_days"])
+                    cycle = st.number_input("Cycle time (days)", min_value=1, value=1)
+                    manual_start = st.date_input("Manual start date", value=date.today())
+                    parent_options = ["(none)"] + [t.id for t in project.tasks]
+                    parent_choice = st.selectbox(
+                        "Parent task", parent_options,
+                        format_func=lambda x: x if x == "(none)" else f"{x} - {next((t.name for t in project.tasks if t.id == x), x)}",
+                    )
+                    submitted = st.form_submit_button("Add task", type="primary")
+                if submitted:
+                    try:
+                        parent_id = None if parent_choice == "(none)" else parent_choice
+                        task = api.add_task(
+                            project, name=name, completion_location=location,
+                            calendar_mode=calendar, cycle_time_days=cycle,
+                            manual_start_date=manual_start, parent_id=parent_id,
+                        )
+                        st.session_state.gantt_add_task_mode = False
+                        st.session_state.gantt_selected_task = task.id
+                        _mark_dirty()
+                        st.rerun()
+                    except GanttError as exc:
+                        st.error(f"{exc.error_code}: {exc.message}")
+                if st.button("Cancel", key="gv_cancel_add"):
+                    st.session_state.gantt_add_task_mode = False
+                    st.rerun()
+            elif selected_task:
+                _render_gantt_sidebar_editor(project, selected_task)
+            else:
+                st.markdown(
+                    '<div style="padding: 40px 20px; text-align: center; color: #999;">'
+                    'Click a task bar to edit</div>',
+                    unsafe_allow_html=True,
+                )
+    elif not sidebar_visible and gantt_tasks:
+        # Show toggle to restore sidebar
+        if st.button("‹ Show sidebar", key="gv_show_sidebar"):
+            st.session_state.gantt_sidebar_visible = True
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -918,6 +1470,15 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     _init_session_state()
+
+    if "gantt_selected_task" not in st.session_state:
+        st.session_state.gantt_selected_task = None
+    if "gantt_view_mode" not in st.session_state:
+        st.session_state.gantt_view_mode = "Week"
+    if "gantt_sidebar_visible" not in st.session_state:
+        st.session_state.gantt_sidebar_visible = True
+    if "gantt_add_task_mode" not in st.session_state:
+        st.session_state.gantt_add_task_mode = False
 
     params = st.query_params
     if "project" in params and st.session_state.project is None:
@@ -989,19 +1550,19 @@ def main() -> None:
     _render_action_buttons(project, path)
     st.divider()
 
-    # Dependency explanation
-    _render_dependency_explanation()
+    # Tabs: Visualized Project Editing / Text Project Editing
+    tab_gantt, tab_list = st.tabs(["Visualized Project Editing", "Text Project Editing"])
 
-    # Summary table
-    _render_summary_table(project)
-    st.divider()
+    with tab_gantt:
+        _render_gantt_view(project)
 
-    # Add task
-    _render_add_task(project)
-
-    # Task editors
-    st.subheader("Edit Tasks")
-    _render_task_table(project)
+    with tab_list:
+        _render_dependency_explanation()
+        _render_summary_table(project)
+        st.divider()
+        _render_add_task(project)
+        st.subheader("Edit Tasks")
+        _render_task_table(project)
 
 
 if __name__ == "__main__":

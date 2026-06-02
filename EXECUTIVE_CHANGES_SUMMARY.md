@@ -350,3 +350,51 @@ Four UI fixes applied to `ui/streamlit_app.py`:
 4. **Parent task editors match leaf task editors.** Parent tasks previously used `st.text_input(disabled=True)` for the Cycle Time field while leaf tasks used `st.number_input`. Both now use `st.number_input` (parents show 0, disabled) with a caption "Derived from children" below. The widget chrome is visually identical.
 
 **Why:** The user flagged that tasks rendered inconsistently (different prefixes and suffixes depending on parent/child status), making the task list noisy. The "Is Complete" checkbox not responding to clicks was a known issue since Push 22 -- the root cause was that completion was gated behind the Apply button, which is non-obvious UX. Making it immediate matches user expectation. The parent editor mismatch (text_input vs number_input) was a visual inconsistency that made the UI feel unfinished.
+
+---
+
+## Push 24 -- `(pending)` -- 2026-06-01
+
+**Step 8: Interactive Gantt chart rendering + visual redesign**
+
+This push delivers the working Interactive Gantt editing surface. The Frappe Gantt custom component now renders inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, sidebar editing, and context menus. Three rendering bugs were diagnosed and fixed, and the visual theme was completely rewritten.
+
+### Bugs fixed:
+
+1. **`classList.add()` crash (fatal).** `_prepare_gantt_data()` builds CSS class strings with spaces (e.g., `"overdue critical"`). Frappe Gantt's `Bar.refresh()` calls `classList.add(custom_class)` which throws `InvalidCharacterError` on space-separated tokens. The entire chart crashed silently. **Fix:** `GanttComponent.jsx` temporarily monkey-patches `DOMTokenList.prototype.add` to split space-separated tokens, restored in a `finally` block.
+
+2. **`calc(100vh - 200px)` in iframe (height collapse).** The container used `100vh` for max-height, but inside a Streamlit iframe `100vh` starts at 0, producing `-200px`. Even error messages were invisible. **Fix:** Removed `maxHeight` and `overflowY` from the container; let `Streamlit.setFrameHeight()` size the iframe.
+
+3. **CSS specificity loss (bars invisible).** Frappe's CSS uses `.gantt .bar-wrapper .bar { fill: var(--g-bar-color) }` (specificity 0,3,0). The theme used `.gantt .bar` (0,2,0) which loses. `--g-bar-color` defaulted to `#fff` — white bars on white background. **Fix:** Complete CSS rewrite overriding Frappe CSS variables at `:root` and matching specificity on all bar-fill selectors.
+
+### Visual redesign ("Industrial Precision" theme):
+
+- **Status colors:** Steel blue (planned), teal-green (completed), amber (delayed), signal red (overdue), dark charcoal (parent tasks). Critical path bars have dark red border stroke.
+- **Grid:** Whisper-weight hairlines (`stroke-width: 0.3`), subtle alternating row bands, barely-there column hover.
+- **Dependency arrows:** Light gray at 60% opacity with rounded joins — recede behind task bars.
+- **Labels:** White text on colored bars with subtle stroke outline; dark text when overflow. DM Sans font family.
+- **Today marker:** Dark vertical line with date badge.
+- **Popup:** Crisp info card with title/subtitle/details hierarchy, proper shadow.
+- **Selected state:** Blue outline with soft glow.
+- **Context menu:** Right-click on bars shows Edit / Mark Complete / Add Child / Delete.
+
+### Frappe Gantt option tuning:
+
+- `bar_height: 24` (down from 28), `padding: 16`, `bar_corner_radius: 4`
+- `column_width` responsive per view mode (Day: 32, Week: 120, Month: 140)
+- `upper_header_height: 36`, `lower_header_height: 28` (compact headers)
+- `scroll_to: "today"` (was "start" — showed empty past dates instead of current bars)
+- `arrow_curve: 6` for smoother dependency connectors
+
+### Files changed:
+
+| File | Change |
+|------|--------|
+| `components/gantt_chart/frontend/src/GanttComponent.jsx` | classList.add patch, removed broken maxHeight, tuned Frappe options, improved popup/context menu |
+| `components/gantt_chart/frontend/src/gantt-theme.css` | Complete rewrite: CSS variable overrides, specificity-matched bar fills, grid/arrow/label/popup/scrollbar styling |
+| `components/gantt_chart/frontend/build/` | Rebuilt Vite production bundle |
+| `.gitignore` | Added negation for `components/gantt_chart/frontend/build/` (needed at runtime) |
+| `HANDOFF.md` | Updated: Step 8 no longer blocked, documented fixes, known bugs, next-session instructions |
+| `EXECUTIVE_CHANGES_SUMMARY.md` | This entry |
+
+**Why:** Step 8 was blocked since Push 23 by a "Component Error" message. The root cause was three compounding bugs: a DOM API crash from space-separated CSS classes, a CSS calc that produced negative heights in an iframe context, and a specificity loss that made all bars invisible. Fixing all three and rewriting the visual theme transforms the Gantt from non-functional to a usable interactive editing surface. The remaining bugs (dependency arrow creation, scrollbar visibility, visual polish) are incremental fixes, not blockers.
