@@ -353,7 +353,7 @@ Four UI fixes applied to `ui/streamlit_app.py`:
 
 ---
 
-## Push 24 -- `(pending)` -- 2026-06-01
+## Push 24 -- `a2b9b53` -- 2026-06-01
 
 **Step 8: Interactive Gantt chart rendering + visual redesign**
 
