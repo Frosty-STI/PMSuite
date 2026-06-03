@@ -438,7 +438,7 @@ Right-click context menu on task bars no longer appears. The context menu code i
 
 ---
 
-## Push 26 -- (pending) -- 2026-06-03
+## Push 26 -- `95946c2` -- 2026-06-03
 
 **Fix right-click context menu and suppress Frappe popup on right-click**
 

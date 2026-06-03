@@ -10,7 +10,7 @@ Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
-| (pending) | 8b   | Fix right-click context menu + suppress Frappe popup on right-click |
+| `95946c2` | 8b   | Fix right-click context menu + suppress Frappe popup on right-click |
 | `eb4e5c9` | 8a   | Fix horizontal scrollbar clipped by iframe boundary |
 | `a2b9b53` | 8    | Step 8: Interactive Gantt rendering + visual redesign (3 bugs fixed, CSS rewrite) |
 | `42ce709` | 7d   | UI polish: uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency |
