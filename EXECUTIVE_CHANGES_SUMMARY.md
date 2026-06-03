@@ -435,3 +435,44 @@ Right-click context menu on task bars no longer appears. The context menu code i
 | `EXECUTIVE_CHANGES_SUMMARY.md` | This entry |
 
 **Why:** The horizontal scrollbar is essential for navigating the Gantt chart timeline — without it users cannot see tasks beyond the initial viewport width. The fix was non-obvious because the naive approach (`document.documentElement.scrollHeight + 20`) caused a feedback loop inflating the iframe to 100K+ pixels. The stable fix measures the actual `.gantt-container` element height instead.
+
+---
+
+## Push 26 -- (pending) -- 2026-06-03
+
+**Fix right-click context menu and suppress Frappe popup on right-click**
+
+Diagnosed and fixed the right-click context menu issue on Gantt task bars. The previous push (25) reported this as a regression from the scrollbar fix, but Playwright-based diagnosis with console instrumentation proved the context menu handler was firing correctly and the menu was rendering. The actual problem was Frappe Gantt's internal event handling interfering with right-click: its `mouseup` handler fires for ALL mouse buttons and shows a popup that overlaps the context menu, and its `mousedown` handler starts drag state on right-click.
+
+### Root cause analysis:
+
+Frappe Gantt v1.2.2's `bar.js` binds a `mouseup` handler on each bar group (`.bar-wrapper`) that fires for all mouse buttons, not just left-click. On right-click, this handler calls `show_popup()`, displaying the Frappe info popup on top of or alongside the custom context menu. Additionally, the `mousedown` handler in `index.js` sets `is_dragging=true` and `bar_being_dragged=false` on right-click, polluting Frappe's internal drag state.
+
+### Fix (GanttComponent.jsx):
+
+1. **Capture-phase `mousedown` listener on SVG** — added `svgEl.addEventListener("mousedown", (e) => { if (e.button === 2) e.stopPropagation(); }, true)`. This prevents Frappe's delegated mousedown handler from firing on right-click, so it never enters drag mode for button 2. Left-click drag (button 0) is completely unaffected because the guard only triggers for `e.button === 2`.
+
+2. **`requestAnimationFrame` popup hide in `_handleContext`** — after setting the context menu React state, schedules `this.ganttInstance.hide_popup()` for the next animation frame. This runs after Frappe's `mouseup` handler has already called `show_popup()`, hiding the Frappe popup before the user sees it alongside the context menu.
+
+### Diagnosis method:
+
+Used the `/diagnose` skill with Playwright-based feedback loop. Added tagged `[DEBUG-ctx*]` console.log instrumentation to `_handleContext`, `_handleDocClick`, and `_buildGantt()`. Ran 4 automated tests: (1) direct right-click shows context menu, (2) Frappe popup suppressed, (3) left-click then right-click after Streamlit re-render, (4) context menu action click dismisses menu. All passed. Also probed: right-click on empty grid (no menu — correct), left-click drag still works after fix.
+
+### Three new Gantt UX bugs documented (user-reported, not yet fixed):
+
+| Priority | Bug | Summary |
+|----------|-----|---------|
+| P0 | Double-click add task | Double-clicking blank space on the Gantt chart does not add a task, despite the hint text saying it should. |
+| P1 | Sidebar not reopened | Clicking "Hide sidebar" then "+ Add Task" does not reopen the sidebar. The add-task form is inside the sidebar, so it's invisible. |
+| P2 | Cancel inconsistent | Clicking "Cancel" in the add-task sidebar sometimes doesn't reset to "Click a task bar to edit" state. |
+
+### Files changed:
+
+| File | Change |
+|------|--------|
+| `components/gantt_chart/frontend/src/GanttComponent.jsx` | Added capture-phase mousedown guard for button 2, added requestAnimationFrame popup hide in _handleContext |
+| `components/gantt_chart/frontend/build/` | Rebuilt Vite production bundle |
+| `HANDOFF.md` | Updated status, replaced context menu bug with three new UX bugs, added Bug 5 fix documentation |
+| `EXECUTIVE_CHANGES_SUMMARY.md` | This entry |
+
+**Why:** The right-click context menu (Edit / Mark Complete / Add Child / Delete) is the primary quick-action interface for the interactive Gantt. Without it, users must click a bar to open the sidebar editor, then navigate to the specific action — a much longer workflow. The fix is minimal and surgical: two event handlers that only affect right-click behavior, leaving all left-click interactions untouched.

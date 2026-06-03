@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Step 8 (Interactive Gantt) is rendering and functional. The Frappe Gantt custom component is live inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, and sidebar editing. The horizontal scrollbar bug is fixed. Two known bugs remain: (1) the right-click context menu no longer appears on task bars, and (2) the overall visual design needs further polish. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. 95 backend tests pass.**
+**Step 8 (Interactive Gantt) is rendering and functional. The Frappe Gantt custom component is live inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, sidebar editing, and right-click context menu. The horizontal scrollbar bug and the right-click context menu bug are both fixed. Three Gantt UX bugs remain (see "Known bugs" below). The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. 95 backend tests pass.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 8b   | Fix right-click context menu + suppress Frappe popup on right-click |
 | `eb4e5c9` | 8a   | Fix horizontal scrollbar clipped by iframe boundary |
 | `a2b9b53` | 8    | Step 8: Interactive Gantt rendering + visual redesign (3 bugs fixed, CSS rewrite) |
 | `42ce709` | 7d   | UI polish: uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency |
@@ -90,7 +91,7 @@ Latest commits (most recent first):
 - **"Complete?" indicator** -- disabled checkbox on each collapsed task row (far right) reflecting `task.is_complete`. Session-state sync ensures it updates immediately on in-session completion changes.
 - **Playwright verification** -- 25 tests across 10 classes verify all editing flows end-to-end. Automatic screenshot-on-failure. Run: `pytest tests/test_streamlit_playwright.py -m playwright`.
 
-### Interactive Gantt (Step 8, rendering with known bugs)
+### Interactive Gantt (Step 8, functional)
 
 - **Frappe Gantt custom component** -- React wrapper around `frappe-gantt` v1.2.2, built with Vite, served as a Streamlit custom component from `components/gantt_chart/frontend/build/`.
 - **Two-tab layout** -- "Visualized Project Editing" (Gantt chart + sidebar) and "Text Project Editing" (expander editors). Both tabs operate on the same `st.session_state.project`.
@@ -98,7 +99,7 @@ Latest commits (most recent first):
 - **Status-colored bars** -- steel blue (planned), teal-green (completed), amber (delayed), signal red (overdue), dark charcoal (parent). Critical path bars have dark red border.
 - **Click/drag interactions** -- click selects task (opens sidebar editor), drag moves start date, drag edge resizes duration. Events fire back to Python via `Streamlit.setComponentValue()`.
 - **Sidebar editor** -- 30% right panel with full task editing (same fields as the text editor), plus Add Child Task and Delete Task buttons.
-- **Context menu** -- right-click on a bar shows Edit / Mark Complete / Add Child / Delete.
+- **Context menu** -- right-click on a bar shows Edit / Mark Complete / Add Child / Delete. Frappe Gantt's popup is suppressed during right-click.
 - **Search highlighting** -- tasks matching the query stay fully opaque; non-matching tasks fade to 20% opacity.
 - **Today marker** -- dark vertical line with date badge.
 - **Dependency arrows** -- quiet gray at 60% opacity, rounded joins.
@@ -107,25 +108,37 @@ Latest commits (most recent first):
 
 #### Known bugs (next session priorities)
 
-1. **Right-click context menu no longer appears on task bars** -- After the scrollbar iframe height fix, right-clicking a Gantt task bar no longer shows the custom context menu (Edit / Mark Complete / Add Child / Delete). The context menu code itself is intact in `GanttComponent.jsx` — `_handleContext` is bound to the SVG's `contextmenu` event in `_buildGantt()`, calls `e.preventDefault()`, reads `e.target.closest(".bar-wrapper")`, and sets React state to render the menu div at `position: fixed` with `e.clientX/Y` coordinates. **Hypotheses to investigate:**
-   - The `document.addEventListener("click", this._handleDocClick)` may fire on right-click in some browsers, immediately dismissing the context menu after it appears. Test by adding a `console.log` in `_handleDocClick` to confirm whether it fires during right-click.
-   - The context menu div renders inside the iframe with `position: fixed` using `e.clientX/Y`. With the iframe now 20px taller than before (796 vs 776), the coordinate system may have shifted. Check whether the menu renders but is positioned outside the visible area.
-   - The `_handleContext` handler may not be binding to the SVG element at all — check whether `el.querySelector("svg")` returns null in `_buildGantt()`.
-   - **Debug path:** Add a temporary `console.log("contextmenu fired", e.target)` at the top of `_handleContext` and right-click a bar in headed mode (`HEADED=1`). If it logs, the handler is binding — check positioning. If it doesn't log, the SVG selector or event binding is the issue.
+1. **P0 — Double-click to add a task in blank space does not work.** The hint text says "Double click chart to add task at cursor location" and the `double_click_empty` event fires from `GanttComponent.jsx`, but the Python handler in `_render_gantt_view()` does not reliably create the task or open the add-task form. Investigate the `double_click_empty` event handler in `streamlit_app.py` — it sets `st.session_state.gantt_add_task_mode = True` but this may not trigger a Streamlit re-render that shows the sidebar form.
 
-2. **Visual design needs further polish** -- The current theme is functional but needs refinement: bar label readability on narrow bars, grid density in Day view, weekend/holiday shading, hover/selected state contrast. **Use `/frontend-design` for the visual iteration pass.**
+2. **P1 — "Add Task" button does not reopen sidebar after "Hide sidebar".** If the user clicks "Hide sidebar ›" to collapse the right panel, then clicks "+ Add Task" in the toolbar, the sidebar does not reappear. The add-task form renders inside the sidebar, so hiding it makes the form invisible. **Fix:** The "+ Add Task" click handler should set `st.session_state.gantt_sidebar_visible = True` alongside `gantt_add_task_mode = True`.
+
+3. **P2 — "Cancel" in the add-task sidebar sometimes doesn't reset.** After clicking "+ Add Task" and then "Cancel", the sidebar should return to the default "Click a task bar to edit" state. This works inconsistently — sometimes the add-task form persists. The issue is likely a Streamlit re-run ordering problem where `gantt_add_task_mode` is not cleared before the sidebar renders. Investigate the `st.session_state.gantt_add_task_mode = False` assignment in the Cancel button handler and ensure it triggers a `st.rerun()`.
+
+4. **Visual design needs further polish** -- The current theme is functional but needs refinement: bar label readability on narrow bars, grid density in Day view, weekend/holiday shading, hover/selected state contrast. **Use `/frontend-design` for the visual iteration pass.**
 
 ## Roadmap (remaining steps)
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 8 | **In progress** | **Interactive Gantt editing surface** -- Rendering works. Scrollbar fixed. Two bugs remain (context menu + visual polish; see "Known bugs" above). Design spec: [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md). |
+| 8 | **In progress** | **Interactive Gantt editing surface** -- Rendering works. Scrollbar and context menu fixed. Three UX bugs remain (double-click add, sidebar visibility, cancel reset; see "Known bugs" above). Design spec: [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md). |
 | 9 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. |
 | 10 | Pending | **Expand npde_demo.json** -- currently 17 tasks; target ~30-50 tasks modeling a generic NPDE program. |
 | 11 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
 | 12 | Pending | **Final Walkthrough Refresh** -- update "New Here?" walkthrough content to reflect the final shipped feature set. |
 
 ## Step 8 -- bugs fixed across sessions
+
+### Bug 5: Right-click context menu not appearing / Frappe popup interference (fixed)
+
+**Symptom:** Right-clicking a Gantt task bar was reported as not showing the custom context menu (Edit / Mark Complete / Add Child / Delete) after the scrollbar iframe height fix.
+
+**Diagnosis:** Playwright-based diagnostic with console instrumentation proved the context menu handler WAS firing and the menu WAS rendering. The actual issue was Frappe Gantt's `mouseup` handler on bar groups (bar.js:347) — it fires for ALL mouse buttons (including button 2 / right-click) and calls `show_popup()`, which displays the Frappe popup on top of the context menu. Additionally, the `mousedown` handler (index.js:1134) initiates drag state on right-click, polluting Frappe's internal state.
+
+**Fix (GanttComponent.jsx):**
+1. **Capture-phase `mousedown` listener on SVG** — calls `e.stopPropagation()` when `e.button === 2`, preventing Frappe from entering drag mode on right-click. Left-click drag (`e.button === 0`) is unaffected.
+2. **`requestAnimationFrame` popup hide in `_handleContext`** — after setting the context menu state, schedules `this.ganttInstance.hide_popup()` for the next frame, which runs after Frappe's `mouseup` handler shows its popup. The popup is hidden before the user sees it.
+
+**Verified:** Playwright diagnostic confirmed: (1) context menu appears on right-click, (2) Frappe popup `.popup-wrapper` has class `hide` during context menu display, (3) left-click then right-click works after Streamlit re-render, (4) menu items dismiss the menu and fire events, (5) right-click on empty grid shows no menu, (6) left-click drag still works.
 
 ### Bug 4: Horizontal scrollbar clipped by iframe boundary (fixed)
 
@@ -257,9 +270,11 @@ C:\Users\Frosty\PMSuite\
 1. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
 2. Read `EXECUTIVE_CHANGES_SUMMARY.md` for the history of every push.
 3. Run `pytest -q --ignore=tests/test_streamlit_playwright.py` from `C:\Users\Frosty\PMSuite` -- should show 95 backend tests passing.
-4. **Two bugs to fix** (see "Known bugs" above):
-   - **Right-click context menu broken:** Use `/diagnose` to determine why the context menu no longer appears on right-click. See the hypotheses in the Known Bugs section. The handler code is intact — the issue is likely event coordination or positioning within the iframe.
-   - **Visual polish:** Use `/frontend-design` for the next visual iteration pass.
+4. **Three Gantt UX bugs to fix** (see "Known bugs" above, listed by priority):
+   - **P0 — Double-click to add task in blank space does not work.** Investigate the `double_click_empty` event handler flow in `streamlit_app.py`.
+   - **P1 — Add Task doesn't reopen sidebar after Hide sidebar.** The `+ Add Task` button handler needs to set `gantt_sidebar_visible = True`.
+   - **P2 — Cancel in add-task sidebar sometimes doesn't reset.** Investigate `gantt_add_task_mode` clearing and Streamlit re-run ordering.
+   - **Visual polish:** Use `/frontend-design` for the visual iteration pass.
 5. After fixing bugs, commit, update `EXECUTIVE_CHANGES_SUMMARY.md`, and push.
 
 ## Critical knowledge for next agent

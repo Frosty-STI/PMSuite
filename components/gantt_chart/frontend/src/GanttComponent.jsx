@@ -203,10 +203,21 @@ class GanttComponent extends StreamlitComponentBase {
       DOMTokenList.prototype.add = origAdd;
     }
 
-    // Bind right-click context menu
     const svgEl = el.querySelector("svg");
     if (svgEl) {
+      // Bind right-click context menu
       svgEl.addEventListener("contextmenu", this._handleContext);
+
+      // Prevent Frappe Gantt from initiating drag on right-click mousedown.
+      // Without this, Frappe sets is_dragging=true and bar_being_dragged=false,
+      // which causes its mouseup handler to show the popup on right-click.
+      svgEl.addEventListener(
+        "mousedown",
+        (e) => {
+          if (e.button === 2) e.stopPropagation();
+        },
+        true,
+      );
     }
 
     // Bind double-click on empty space
@@ -234,6 +245,12 @@ class GanttComponent extends StreamlitComponentBase {
         taskId,
         isComplete: detail?.is_complete || false,
       },
+    });
+
+    // Frappe Gantt's bar mouseup handler fires for all buttons (including
+    // right-click) and shows its popup. Hide it after the mouseup cycle.
+    requestAnimationFrame(() => {
+      if (this.ganttInstance) this.ganttInstance.hide_popup();
     });
   };
 
