@@ -401,7 +401,7 @@ This push delivers the working Interactive Gantt editing surface. The Frappe Gan
 
 ---
 
-## Push 25 -- (pending) -- 2026-06-02
+## Push 25 -- `eb4e5c9` -- 2026-06-02
 
 **Fix horizontal scrollbar clipped by Streamlit iframe boundary**
 
