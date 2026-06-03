@@ -110,13 +110,11 @@ Updates `cycle_time_days` with calendar-mode-aware math:
 
 Parent tasks block this interaction — their duration is derived from children.
 
-### Q12 — Dependency arrows
+### Q12 — Dependency management
 
-**Frappe Gantt's native drag-to-connect.** Hovering a bar reveals connector circles (green at start, orange at end). Drag from one circle to another bar's circle to create a dependency. Type (FS/SS/FF/SF) is auto-determined by which circles are connected. Delete/Backspace removes a selected arrow.
+**Sidebar-driven.** Dependencies are created and removed via the sidebar detail panel's dependency section (predecessor dropdown, type selector FS/SS/FF/SF, lag input). Existing dependency arrows are rendered read-only on the chart for visualization.
 
-Callbacks `on_dependency_create` and `on_dependency_delete` pipe events back to Python, which calls `api.add_dependency()` / `api.remove_dependency()`.
-
-**Lag and type changes** after creation are done in the sidebar detail panel's dependency section.
+**Drag-to-connect descoped:** The original design called for Frappe Gantt's native drag-to-connect, but base `frappe-gantt` v1.2.2 does not expose `on_dependency_create` callbacks (that feature existed only in `@workiom/frappe-gantt` which has a fatal ES module bug). The sidebar workflow is fully functional and sufficient — drag-to-connect may be revisited in a future version if a compatible library emerges.
 
 ### Q9 — Update speed (optimistic then correct)
 

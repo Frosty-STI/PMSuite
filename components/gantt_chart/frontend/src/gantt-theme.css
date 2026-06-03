@@ -55,6 +55,8 @@
   border-radius: 6px;
   border: 1px solid #e4e8ec;
   background: #ffffff;
+  overflow: auto;
+  padding-bottom: 14px;
   font-family: "DM Sans", "SF Pro Display", -apple-system, BlinkMacSystemFont,
     "Segoe UI", system-ui, sans-serif;
 }
@@ -374,21 +376,27 @@
 /* ------------------------------------------------------------------ */
 
 .gantt-container::-webkit-scrollbar {
-  height: 7px;
-  width: 7px;
+  height: 12px;
+  width: 12px;
 }
 
 .gantt-container::-webkit-scrollbar-track {
-  background: #f5f7f9;
+  background: #eef0f3;
+  border-radius: 6px;
 }
 
 .gantt-container::-webkit-scrollbar-thumb {
-  background: #c4cdd6;
-  border-radius: 4px;
+  background: #8b9aab;
+  border-radius: 6px;
+  border: 2px solid #eef0f3;
 }
 
 .gantt-container::-webkit-scrollbar-thumb:hover {
-  background: #9ba8b5;
+  background: #6b7a8d;
+}
+
+.gantt-container::-webkit-scrollbar-corner {
+  background: #eef0f3;
 }
 
 

@@ -4,12 +4,13 @@ This document is the resume point for any fresh agent or developer picking up wh
 
 ## Where we are right now
 
-**Step 8 (Interactive Gantt) is rendering and functional. The Frappe Gantt custom component is live inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, sidebar editing, and context menus. Three known bugs remain: (1) dependency arrow creation from the chart doesn't fire events, (2) scrollbars in the Gantt container are invisible, and (3) the overall visual design needs further polish. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. 95 backend tests pass.**
+**Step 8 (Interactive Gantt) is rendering and functional. The Frappe Gantt custom component is live inside the Streamlit UI with status-colored bars, dependency arrows, click/drag interactions, and sidebar editing. The horizontal scrollbar bug is fixed. Two known bugs remain: (1) the right-click context menu no longer appears on task bars, and (2) the overall visual design needs further polish. The Playwright suite is 25/25 green. The backend has been feature-complete since Step 5. 95 backend tests pass.**
 
 Latest commits (most recent first):
 
 | Hash      | Step | Summary |
 |-----------|------|---------|
+| (pending) | 8a   | Fix horizontal scrollbar clipped by iframe boundary |
 | `a2b9b53` | 8    | Step 8: Interactive Gantt rendering + visual redesign (3 bugs fixed, CSS rewrite) |
 | `42ce709` | 7d   | UI polish: uniform task labels, hierarchy indentation, immediate completion toggle, parent editor consistency |
 | `d6e3b6b` | 7c+  | NPDE demo hierarchy, auto-clear parent cycle_time, UI polish attempts, README rewrite |
@@ -106,25 +107,37 @@ Latest commits (most recent first):
 
 #### Known bugs (next session priorities)
 
-1. **Dependency arrow creation broken** -- Drawing dependency arrows between bars in the Gantt chart does not fire events back to Python. The base `frappe-gantt` v1.2.2 does not have `on_dependency_create` callbacks (that feature was in `@workiom/frappe-gantt` which has a fatal ES module bug). Dependencies must currently be added via the sidebar panel. **Use `/diagnose` to investigate whether the base library supports drag-to-connect or if a workaround is needed.**
+1. **Right-click context menu no longer appears on task bars** -- After the scrollbar iframe height fix, right-clicking a Gantt task bar no longer shows the custom context menu (Edit / Mark Complete / Add Child / Delete). The context menu code itself is intact in `GanttComponent.jsx` — `_handleContext` is bound to the SVG's `contextmenu` event in `_buildGantt()`, calls `e.preventDefault()`, reads `e.target.closest(".bar-wrapper")`, and sets React state to render the menu div at `position: fixed` with `e.clientX/Y` coordinates. **Hypotheses to investigate:**
+   - The `document.addEventListener("click", this._handleDocClick)` may fire on right-click in some browsers, immediately dismissing the context menu after it appears. Test by adding a `console.log` in `_handleDocClick` to confirm whether it fires during right-click.
+   - The context menu div renders inside the iframe with `position: fixed` using `e.clientX/Y`. With the iframe now 20px taller than before (796 vs 776), the coordinate system may have shifted. Check whether the menu renders but is positioned outside the visible area.
+   - The `_handleContext` handler may not be binding to the SVG element at all — check whether `el.querySelector("svg")` returns null in `_buildGantt()`.
+   - **Debug path:** Add a temporary `console.log("contextmenu fired", e.target)` at the top of `_handleContext` and right-click a bar in headed mode (`HEADED=1`). If it logs, the handler is binding — check positioning. If it doesn't log, the SVG selector or event binding is the issue.
 
-2. **Scrollbars invisible in Gantt container** -- The horizontal and vertical scrollbars on the `.gantt-container` are not rendering visually, even though the container IS scrollable (you can scroll with mouse wheel or trackpad). Likely a CSS issue with the custom theme or Frappe's `overflow` settings conflicting with the iframe context. **Use `/diagnose` to check CSS `overflow` and `::-webkit-scrollbar` rules.**
-
-3. **Visual design needs further polish** -- The current theme is functional but needs refinement: bar label readability on narrow bars, grid density in Day view, weekend/holiday shading, hover/selected state contrast. **Use `/frontend-design` for the visual iteration pass.**
+2. **Visual design needs further polish** -- The current theme is functional but needs refinement: bar label readability on narrow bars, grid density in Day view, weekend/holiday shading, hover/selected state contrast. **Use `/frontend-design` for the visual iteration pass.**
 
 ## Roadmap (remaining steps)
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 8 | **In progress** | **Interactive Gantt editing surface** -- Rendering works. Three bugs remain (see "Known bugs" above). Design spec: [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md). |
+| 8 | **In progress** | **Interactive Gantt editing surface** -- Rendering works. Scrollbar fixed. Two bugs remain (context menu + visual polish; see "Known bugs" above). Design spec: [INTERACTIVE_SURFACE.md](INTERACTIVE_SURFACE.md). |
 | 9 | Pending | **TI holiday calendar ingestion** -- replace library-seeded holidays with actual TI WW Holiday Calendar data from `C:\Users\Frosty\Documents\TI WW Holiday Calendar.xlsx`. |
 | 10 | Pending | **Expand npde_demo.json** -- currently 17 tasks; target ~30-50 tasks modeling a generic NPDE program. |
 | 11 | Pending | **Test backfill** -- broaden test_validation.py, add test_scheduler.py calendar math edge cases, test_locations.py, test_holidays.py, more test_excel_builder.py structural assertions, test_excel_visual.py (opt-in), test_performance.py (slow marker). |
 | 12 | Pending | **Final Walkthrough Refresh** -- update "New Here?" walkthrough content to reflect the final shipped feature set. |
 
-## Step 8 -- bugs fixed in this session
+## Step 8 -- bugs fixed across sessions
 
-Three rendering bugs were diagnosed and fixed using Playwright-based automation to inspect the component iframe:
+### Bug 4: Horizontal scrollbar clipped by iframe boundary (fixed)
+
+**Symptom:** The horizontal scrollbar on `.gantt-container` existed but was obscured by the iframe bottom border. Users could not scroll the Gantt chart horizontally.
+
+**Root cause:** `StreamlitComponentBase.componentDidMount()` and `.componentDidUpdate()` both call `Streamlit.setFrameHeight()` with no arguments, which auto-detects from `document.body.scrollHeight`. This height (776px) did not include the 12px horizontal scrollbar rendered below the content. The iframe was sized to exactly the content height, clipping the scrollbar by 8px.
+
+**Fix:** Skipped `super.componentDidMount()` and `super.componentDidUpdate()` in `GanttComponent` (they only called `setFrameHeight()` with no args). Added `_setFrameHeightWithScrollbar()` helper that measures `.gantt-container.offsetHeight + 20` and passes the explicit value. Both `_buildGantt()` and the `else` branch in `componentDidUpdate` now call this helper.
+
+**Verified:** Playwright diagnostic confirmed `room_below: 12px` (was -8px), programmatic scrolling works (`scrollLeft` 700 → 1000), and the Gantt renders correctly in Week and Day view modes.
+
+Three earlier rendering bugs were diagnosed and fixed using Playwright-based automation to inspect the component iframe:
 
 ### Bug 1: `classList.add()` crash (fatal)
 
@@ -244,10 +257,9 @@ C:\Users\Frosty\PMSuite\
 1. Read `MASTERECAP.md` for the design contract and `HANDOFF.md` (this file) for current state.
 2. Read `EXECUTIVE_CHANGES_SUMMARY.md` for the history of every push.
 3. Run `pytest -q --ignore=tests/test_streamlit_playwright.py` from `C:\Users\Frosty\PMSuite` -- should show 95 backend tests passing.
-4. **Three bugs to fix** (see "Known bugs" above):
-   - **Dependency arrows:** Use `/diagnose` to determine if base `frappe-gantt` v1.2.2 supports drag-to-connect or if a JS-side workaround is needed. Then use `/verify` to confirm the fix works in the live app.
-   - **Scrollbars:** Use `/diagnose` to trace the CSS `overflow` and scrollbar rendering issue in the iframe context. Then use `/verify` to confirm scrollbars appear.
-   - **Visual polish:** Use `/frontend-design` for the next visual iteration pass after the bugs are fixed.
+4. **Two bugs to fix** (see "Known bugs" above):
+   - **Right-click context menu broken:** Use `/diagnose` to determine why the context menu no longer appears on right-click. See the hypotheses in the Known Bugs section. The handler code is intact — the issue is likely event coordination or positioning within the iframe.
+   - **Visual polish:** Use `/frontend-design` for the next visual iteration pass.
 5. After fixing bugs, commit, update `EXECUTIVE_CHANGES_SUMMARY.md`, and push.
 
 ## Critical knowledge for next agent
@@ -266,7 +278,7 @@ C:\Users\Frosty\PMSuite\
 - **Component build:** `cd C:\Users\Frosty\PMSuite\components\gantt_chart\frontend && npx vite build` — outputs to `build/`.
 - **Dev mode toggle:** Set `_RELEASE = False` in `components/gantt_chart/__init__.py` and run `npm start` for Vite dev server on port 3000.
 - **`INTERACTIVE_SURFACE.md`** contains all 38 design decisions from the grilling session. It is the spec for Step 8.
-- **Frappe Gantt v1.2.2** is the base library. The `@workiom/frappe-gantt` fork has a fatal `const` reassignment bug in its ES build and cannot be used. Base frappe-gantt lacks `on_dependency_create` callbacks.
+- **Frappe Gantt v1.2.2** is the base library. The `@workiom/frappe-gantt` fork has a fatal `const` reassignment bug in its ES build and cannot be used. Drag-to-connect dependency creation is descoped; dependencies are managed via the sidebar panel.
 - **CSS specificity matters.** Frappe uses `.gantt .bar-wrapper .bar` (0,3,0). Any bar color overrides must match this specificity. The current theme overrides Frappe CSS variables at `:root` AND uses matching-specificity selectors.
 - **`classList.add()` monkey-patch** in `GanttComponent.jsx` is load-bearing — removing it will crash the Gantt for any task with multiple CSS classes (overdue+critical, planned+parent-task, etc.).
 

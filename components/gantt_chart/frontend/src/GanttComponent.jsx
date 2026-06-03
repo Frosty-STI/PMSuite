@@ -39,13 +39,14 @@ class GanttComponent extends StreamlitComponentBase {
   }
 
   componentDidMount() {
-    super.componentDidMount();
+    // Skip super.componentDidMount() — it calls setFrameHeight() with no args,
+    // which auto-detects body.scrollHeight and clips the horizontal scrollbar.
     document.addEventListener("click", this._handleDocClick);
     this._buildGantt();
   }
 
   componentDidUpdate(prevProps) {
-    super.componentDidUpdate();
+    // Skip super.componentDidUpdate() — same setFrameHeight() clipping issue.
     const prev = prevProps.args || {};
     const curr = this.props.args || {};
 
@@ -57,6 +58,8 @@ class GanttComponent extends StreamlitComponentBase {
 
     if (tasksChanged || depsChanged || viewChanged) {
       this._buildGantt();
+    } else {
+      this._setFrameHeightWithScrollbar();
     }
 
     if (curr.today_scroll && this.ganttInstance) {
@@ -69,6 +72,17 @@ class GanttComponent extends StreamlitComponentBase {
 
   componentWillUnmount() {
     document.removeEventListener("click", this._handleDocClick);
+  }
+
+  _setFrameHeightWithScrollbar() {
+    const gc = document.querySelector(".gantt-container");
+    if (gc) {
+      // offsetHeight includes border + padding but NOT the horizontal scrollbar
+      // rendered below the content. Add 20px buffer for the scrollbar track.
+      Streamlit.setFrameHeight(gc.offsetHeight + 20);
+    } else {
+      Streamlit.setFrameHeight();
+    }
   }
 
   _sendEvent(eventType, payload) {
@@ -198,7 +212,7 @@ class GanttComponent extends StreamlitComponentBase {
     // Bind double-click on empty space
     el.addEventListener("dblclick", this._handleDblClick);
 
-    Streamlit.setFrameHeight();
+    this._setFrameHeightWithScrollbar();
   }
 
   _handleContext = (e) => {
@@ -290,7 +304,6 @@ class GanttComponent extends StreamlitComponentBase {
           ref={this.containerRef}
           style={{
             width: "100%",
-            overflowX: "auto",
           }}
         />
 

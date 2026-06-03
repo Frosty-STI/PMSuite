@@ -398,3 +398,40 @@ This push delivers the working Interactive Gantt editing surface. The Frappe Gan
 | `EXECUTIVE_CHANGES_SUMMARY.md` | This entry |
 
 **Why:** Step 8 was blocked since Push 23 by a "Component Error" message. The root cause was three compounding bugs: a DOM API crash from space-separated CSS classes, a CSS calc that produced negative heights in an iframe context, and a specificity loss that made all bars invisible. Fixing all three and rewriting the visual theme transforms the Gantt from non-functional to a usable interactive editing surface. The remaining bugs (dependency arrow creation, scrollbar visibility, visual polish) are incremental fixes, not blockers.
+
+---
+
+## Push 25 -- (pending) -- 2026-06-02
+
+**Fix horizontal scrollbar clipped by Streamlit iframe boundary**
+
+The Gantt chart's horizontal scrollbar was invisible because the Streamlit component iframe was sized too small to include it. This push fixes the root cause and documents a new regression (context menu broken).
+
+### Root cause analysis:
+
+`StreamlitComponentBase.componentDidMount()` and `.componentDidUpdate()` both call `Streamlit.setFrameHeight()` with no arguments, which auto-detects from `document.body.scrollHeight`. This measurement (776px) does not include the 12px horizontal scrollbar that the browser renders below the `.gantt-container` content. The iframe was sized to exactly the content height, clipping the scrollbar by 8px (`room_below: -8px`).
+
+### Fix (GanttComponent.jsx):
+
+1. **Skipped `super.componentDidMount()` and `super.componentDidUpdate()`** — these only called `setFrameHeight()` with no args (the source of the clipping).
+2. **Added `_setFrameHeightWithScrollbar()` helper** — measures `.gantt-container.offsetHeight + 20` and passes the explicit value to `Streamlit.setFrameHeight()`. The 20px buffer accounts for the scrollbar track (12px) plus margin.
+3. **Both `_buildGantt()` and the `else` branch in `componentDidUpdate`** now call this helper, ensuring the iframe is always sized correctly whether or not the chart rebuilds.
+
+### Verification:
+
+Playwright-driven diagnostic confirmed: `room_below: 12px` (was -8px), `innerHeight: 796` (was 776), programmatic scrolling works (`scrollLeft` 700 → 1000), and the Gantt renders correctly in both Week and Day view modes. User confirmed scrollbar is now visible.
+
+### New regression discovered:
+
+Right-click context menu on task bars no longer appears. The context menu code is intact — the issue is likely event coordination or `position: fixed` coordinate mapping within the resized iframe. Documented in HANDOFF.md with hypotheses and debug path for the next session.
+
+### Files changed:
+
+| File | Change |
+|------|--------|
+| `components/gantt_chart/frontend/src/GanttComponent.jsx` | Skip base class setFrameHeight(), add _setFrameHeightWithScrollbar() helper |
+| `components/gantt_chart/frontend/build/` | Rebuilt Vite production bundle |
+| `HANDOFF.md` | Updated status, replaced scrollbar bug with context menu bug, added fix documentation |
+| `EXECUTIVE_CHANGES_SUMMARY.md` | This entry |
+
+**Why:** The horizontal scrollbar is essential for navigating the Gantt chart timeline — without it users cannot see tasks beyond the initial viewport width. The fix was non-obvious because the naive approach (`document.documentElement.scrollHeight + 20`) caused a feedback loop inflating the iframe to 100K+ pixels. The stable fix measures the actual `.gantt-container` element height instead.
